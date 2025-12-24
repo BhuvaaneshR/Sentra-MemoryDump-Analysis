@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentra | Secure Login</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-header">
+            <h2>Sentra</h2>
+            <p>Memory Forensics Platform - Sign In</p>
+        </div>
+
+        <div id="error-message" class="error-msg">Invalid credentials.</div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" required 
+                       autocomplete="email" placeholder="analyst@agency.com">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <div class="password-wrapper">
+                    <input type="password" id="password" name="password" required 
+                           autocomplete="current-password" placeholder="••••••••">
+                    
+                    <span class="toggle-password" onclick="togglePassword('password')">
+                        <svg id="eye-icon-password" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </span>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-primary">SIGN IN</button>
+        </form>
+
+        <div class="google-btn-container">
+            <div id="g_id_onload"
+                 data-client_id="YOUR_GOOGLE_CLIENT_ID"
+                 data-callback="handleCredentialResponse">
+            </div>
+            <div class="g_id_signin" 
+                 data-type="standard" 
+                 data-theme="filled_black"
+                 data-size="large"
+                 data-width="310"
+                 data-text="sign_in_with">
+            </div>
+        </div>
+
+        <div class="auth-footer">
+            <p>Don't have access? <a href="signup.html">Sign Up</a></p>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+</body>
+</html>

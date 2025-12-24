@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentra | New Account</title>
+    <link rel="stylesheet" href="css/style.css">
+    
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script type="text/javascript">
+       (function(){
+          // Initialize EmailJS with your Public Key
+          emailjs.init("JZ0rEUEy5_MITu2UI"); 
+       })();
+    </script>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-header">
+            <h2>SENTRA</h2>
+            <p>Memory Forensics Platform - Sign Up</p>
+        </div>
+
+        <div id="error-message" class="error-msg"></div>
+
+        <form id="signupForm">
+            <div id="user-details-section">
+                <div class="form-group">
+                    <label for="fullname">Full Name</label>
+                    <input type="text" id="fullname" name="fullname" required 
+                           autocomplete="name" placeholder="John Doe">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required 
+                           autocomplete="email" placeholder="john.doe@agency.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="password" name="password" required 
+                               autocomplete="new-password" placeholder="Min. 8 characters">
+                        <span class="toggle-password" onclick="togglePassword('password')">
+                            <svg id="eye-icon-password" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm-password">Confirm Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="confirm-password" name="confirm-password" required 
+                               autocomplete="new-password" placeholder="Re-enter password">
+                        <span class="toggle-password" onclick="togglePassword('confirm-password')">
+                            <svg id="eye-icon-confirm-password" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </span>
+                    </div>
+                </div>
+
+                <button type="button" id="send-otp-btn" class="btn-primary">Generate OTP</button>
+            </div>
+
+            <div id="otp-section" class="form-group hidden otp-animation">
+                <p style="text-align: center; color: var(--primary-color); font-size: 0.9rem; margin-bottom: 10px;">
+                    Code sent to your email.
+                </p>
+                <label for="otp-input">Enter Verification Code</label>
+                <input type="text" id="otp-input" name="otp-input" 
+                       placeholder="XXXXXX" maxlength="6" style="text-align: center; letter-spacing: 5px;">
+                
+                <button type="submit" class="btn-primary" style="margin-top: 15px;">VERIFY & REGISTER</button>
+            </div>
+
+        </form>
+
+        <div class="auth-footer">
+            <p>Already have an account? <a href="signin.html">Sign In</a></p>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+</body>
+</html>
