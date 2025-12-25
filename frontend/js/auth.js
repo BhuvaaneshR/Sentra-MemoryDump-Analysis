@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- CONFIGURATION ---
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    let generatedOTP = null; // Store the OTP locally (In production, this should be server-side)
+    let generatedOTP = null; // Store the OTP locally
 
     // --- ELEMENTS ---
     const signupForm = document.getElementById('signupForm');
@@ -61,13 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 otp: generatedOTP
             };
 
-            // REPLACE WITH YOUR SERVICE ID AND TEMPLATE ID
+            // Using your specific Service & Template IDs
             emailjs.send('service_khhjwvc', 'template_tn5l1e3', templateParams)
                 .then(function(response) {
                     console.log('SUCCESS!', response.status, response.text);
                     
                     // 4. UI Transition: Hide Inputs, Show OTP
-                    // We make inputs read-only so user doesn't change email after OTP is sent
                     document.getElementById('fullname').readOnly = true;
                     document.getElementById('email').readOnly = true;
                     document.getElementById('password').readOnly = true;
@@ -99,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // SUCCESS
                     alert("Verification Successful! Account Created.");
                     console.log("Redirecting to dashboard...");
-                    // window.location.href = "dashboard.html"; // Uncomment when dashboard exists
+                    // window.location.href = "dashboard.html"; 
                 } else {
                     // FAILURE
                     showError("Invalid OTP. Please try again.");
@@ -113,14 +112,40 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loginForm) {
         loginForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            // ... (Previous Login Logic) ...
-            alert("Login Simulation.");
+            alert("Standard Login Simulation (Backend pending for Email/Pass).");
         });
     }
 
-    // Google OAuth Callback
+    // --- GOOGLE OAUTH HANDLER (CONNECTED TO BACKEND) ---
+    // This function is called automatically by the Google Sign-In button
     window.handleCredentialResponse = (response) => {
-        console.log("Google JWT ID Token:", response.credential);
+        console.log("Google JWT Received. Verifying with Sentra Backend...");
+
+        // Send the token to your Python Flask Backend
+        fetch('http://127.0.0.1:5000/api/google-login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ token: response.credential })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "success") {
+                // Success: Backend verified the user
+                alert(`Login Successful!\nWelcome, ${data.user.name}`);
+                console.log("Server Response:", data);
+                
+                // TODO: Store session token (data.token) if you implement JWT later
+                // window.location.href = "dashboard.html";
+            } else {
+                showError("Authentication Failed: " + data.error);
+            }
+        })
+        .catch(err => {
+            console.error("Backend Error:", err);
+            showError("Could not connect to Sentra Backend. Ensure 'app.py' is running.");
+        });
     };
 });
 
@@ -130,7 +155,7 @@ function generateSecureOTP() {
     // Generates a cryptographically strong 6-digit string
     const array = new Uint32Array(1);
     window.crypto.getRandomValues(array);
-    const otp = (array[0] % 900000) + 100000; // Ensures 6 digits (100000-999999)
+    const otp = (array[0] % 900000) + 100000; 
     return otp.toString();
 }
 
@@ -178,7 +203,8 @@ function showError(message) {
 }
 
 function hideError() {
-    document.getElementById('error-message').style.display = 'none';
+    const errorMsg = document.getElementById('error-message');
+    if(errorMsg) errorMsg.style.display = 'none';
 }
 
 function togglePassword(fieldId) {
