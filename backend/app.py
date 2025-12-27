@@ -13,30 +13,29 @@ import time
 
 app = Flask(__name__)
 
-# --- 1. MANUAL CORS OVERRIDE (CRITICAL FIX) ---
-# This forces the headers onto every single response, bypassing library issues.
+# --- 1. MANUAL CORS OVERRIDE ---
+# Forces headers on every response to fix connection issues
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'  # Allow anyone
+    response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return response
 
 # --- 2. CONFIGURATION ---
-# Database
 DB_HOST = "localhost"
 DB_NAME = "sentra_db"
 DB_USER = "postgres"
 DB_PASS = "admin" 
 
-# Email (SMTP)
+# Email Credentials
 SMTP_EMAIL = "sentramemorydump@gmail.com"
 SMTP_PASSWORD = "pjcn avud bbup yvaz" 
 
-# Google
+# Google Client ID
 GOOGLE_CLIENT_ID = "199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com" 
 
-# File Uploads
+# Upload Configuration
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -64,7 +63,6 @@ def send_email_otp(to_email, otp):
         msg['From'] = SMTP_EMAIL
         msg['To'] = to_email
 
-        # Connect to Gmail SMTP Server securely
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
@@ -94,18 +92,14 @@ def send_otp():
     if not email:
         return jsonify({"error": "Email is required"}), 400
 
-    # Generate OTP
     otp = str(random.randint(100000, 999999))
-    
-    # Store OTP (5 min expiry)
     otp_storage[email] = {
         "otp": otp,
         "expires_at": time.time() + 300 
     }
 
-    # Send via SMTP
     if send_email_otp(email, otp):
-        print(f"📧 OTP sent to {email}: {otp}") # Log for debug
+        print(f"📧 OTP sent to {email}: {otp}")
         return jsonify({"status": "success", "message": "OTP sent"}), 200
     else:
         return jsonify({"error": "Failed to send email"}), 500
@@ -121,24 +115,17 @@ def signup():
     password = data.get('password')
     user_otp = data.get('otp')
 
-    # 1. Verify OTP
+    # Verify OTP
     record = otp_storage.get(email)
-    if not record:
-        return jsonify({"error": "OTP not requested or expired"}), 400
-    if time.time() > record['expires_at']:
-        del otp_storage[email]
-        return jsonify({"error": "OTP expired"}), 400
-    if record['otp'] != user_otp:
-        return jsonify({"error": "Invalid OTP"}), 400
+    if not record or time.time() > record['expires_at'] or record['otp'] != user_otp:
+        return jsonify({"error": "Invalid or Expired OTP"}), 400
 
-    # 2. Register User
     hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
     conn = get_db_connection()
     if not conn: return jsonify({"error": "Database error"}), 500
 
     try:
         cur = conn.cursor()
-        # Check duplicate
         cur.execute("SELECT user_id FROM users WHERE email = %s", (email,))
         if cur.fetchone():
             return jsonify({"error": "User already exists"}), 400
@@ -148,7 +135,7 @@ def signup():
             (full_name, email, hashed_pw)
         )
         conn.commit()
-        del otp_storage[email] # Cleanup
+        del otp_storage[email]
         return jsonify({"status": "success"}), 201
     except Exception as e:
         conn.rollback()
@@ -170,19 +157,19 @@ def login():
         if not conn: return jsonify({"error": "Database unavailable"}), 500
         
         cur = conn.cursor()
+        # NOTE: This query assumes 'profile_photo' column exists. 
+        # If you get an error, run: ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL;
         cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
         cur.close()
         conn.close()
 
         if user:
-            # Check provider
             if user[2] == 'google':
                  return jsonify({"error": "Please use Google Sign-In"}), 400
             
-            # Check Password
             if check_password_hash(user[0], password):
-                # Include photo URL if exists
+                # Construct Photo URL
                 photo_url = f"http://127.0.0.1:5000/static/uploads/{user[3]}" if user[3] else None
                 return jsonify({
                     "status": "success", 
@@ -206,7 +193,6 @@ def google_login():
         data = request.json
         token = data.get('token')
         
-        # Verify Token
         id_info = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
         email = id_info.get('email')
         name = id_info.get('name')
@@ -214,7 +200,6 @@ def google_login():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Check / Create User
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
 
@@ -226,11 +211,10 @@ def google_login():
         else:
             cur.execute("UPDATE users SET last_login = NOW() WHERE email = %s", (email,))
         
-        # Log action
         cur.execute("INSERT INTO audit_logs (user_email, action) VALUES (%s, 'GOOGLE_LOGIN')", (email,))
         conn.commit()
         
-        # Fetch photo if exists (for returning user)
+        # Fetch Photo
         cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
         photo_row = cur.fetchone()
         photo_url = f"http://127.0.0.1:5000/static/uploads/{photo_row[0]}" if photo_row and photo_row[0] else None
@@ -278,8 +262,7 @@ def get_profile():
 def upload_photo():
     if request.method == 'OPTIONS': return jsonify({}), 200
 
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
+    if 'file' not in request.files: return jsonify({"error": "No file part"}), 400
     
     file = request.files['file']
     email = request.form.get('email')
@@ -299,8 +282,40 @@ def upload_photo():
             "status": "success", 
             "file_url": f"http://127.0.0.1:5000/static/uploads/{filename}"
         }), 200
-    
     return jsonify({"error": "Invalid file type"}), 400
+
+# --- SETTINGS: REMOVE PHOTO ---
+@app.route('/api/remove-photo', methods=['POST', 'OPTIONS'])
+def remove_photo():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+
+    data = request.json
+    email = data.get('email')
+
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Error"}), 500
+
+    try:
+        cur = conn.cursor()
+        # Optional: Get filename to delete from disk
+        cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+        
+        # Set to NULL in DB
+        cur.execute("UPDATE users SET profile_photo = NULL WHERE email = %s", (email,))
+        conn.commit()
+
+        # Optional: Delete file
+        if row and row[0]:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], row[0])
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "Photo removed"}), 200
+    except Exception as e:
+        return jsonify({"error": "Failed to remove photo"}), 500
 
 # --- SETTINGS: UPDATE PASSWORD ---
 @app.route('/api/update-password', methods=['POST', 'OPTIONS'])
@@ -312,12 +327,10 @@ def update_password():
     new_password = data.get('new_password')
     otp_input = data.get('otp')
 
-    # Verify OTP
     record = otp_storage.get(email)
     if not record or time.time() > record['expires_at'] or record['otp'] != otp_input:
         return jsonify({"error": "Invalid or Expired OTP"}), 400
 
-    # Update Password
     hashed_pw = generate_password_hash(new_password, method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -329,7 +342,7 @@ def update_password():
     del otp_storage[email]
     return jsonify({"status": "success", "message": "Password updated"}), 200
 
-# --- STATIC FILES (For Profile Photos) ---
+# --- STATIC FILES ---
 @app.route('/static/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)

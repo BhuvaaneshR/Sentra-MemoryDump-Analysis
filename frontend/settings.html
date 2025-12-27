@@ -90,6 +90,20 @@
                     </form>
                 </div>
 
+                <div class="profile-center">
+    <div class="large-avatar" id="photo-upload-trigger">
+        <i class="fa-solid fa-camera" id="default-camera-icon"></i>
+        <img id="profile-image-preview" src="" style="display: none;">
+        
+        <div id="remove-photo-btn" class="remove-overlay" title="Remove Photo" style="display:none;">
+            <i class="fa-solid fa-trash"></i>
+        </div>
+    </div>
+    
+    <p class="hint-text">Click image to update</p>
+    <input type="file" id="file-input-hidden" accept="image/*" style="display: none;">
+</div>
+
                 <div class="settings-card">
                     <h3><i class="fa-solid fa-palette"></i> Appearance</h3>
                     <div class="form-group">
