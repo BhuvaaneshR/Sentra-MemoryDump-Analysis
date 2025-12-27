@@ -17,8 +17,10 @@
                 <a href="settings.html" class="active"><i class="fa-solid fa-gear"></i> Settings</a>
             </nav>
             <div class="user-profile">
-                <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
-                <div class="user-info"><span id="analyst-name">Analyst</span></div>
+                <div class="avatar" id="sidebar-avatar-container">
+                    <i class="fa-solid fa-user-secret"></i>
+                </div>
+                <div class="user-info"><span id="sidebar-name">Loading...</span></div>
                 <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </div>
         </aside>
@@ -28,42 +30,83 @@
                 <h1>System Configuration</h1>
             </header>
 
+            <div id="error-message" class="error-msg" style="display:none; margin-bottom: 1rem;"></div>
+            <div id="success-message" class="success-msg" style="display:none; margin-bottom: 1rem; color: #00ff88; background: rgba(0, 255, 136, 0.1); padding: 10px; border-radius: 4px; text-align: center;"></div>
+
             <div class="settings-grid">
+                
                 <div class="settings-card">
                     <h3><i class="fa-solid fa-user-shield"></i> Analyst Profile</h3>
+                    
+                    <div class="profile-center">
+                        <div class="large-avatar" id="photo-upload-trigger" title="Click to upload new photo">
+                            <i class="fa-solid fa-camera" id="default-camera-icon"></i>
+                            <img id="profile-image-preview" src="" style="display: none;">
+                        </div>
+                        <p class="hint-text">Click image to update</p>
+                        <input type="file" id="file-input-hidden" accept="image/*" style="display: none;">
+                    </div>
+
                     <form class="settings-form">
                         <div class="form-group">
                             <label>Display Name</label>
-                            <input type="text" id="setting-name" disabled value="Loading...">
+                            <input type="text" id="display-name" disabled class="immutable-input">
                         </div>
                         <div class="form-group">
-                            <label>Email Address</label>
-                            <input type="email" id="setting-email" disabled value="Loading...">
+                            <label>Email Address (Immutable)</label>
+                            <input type="email" id="display-email" disabled class="immutable-input">
                         </div>
                     </form>
                 </div>
 
                 <div class="settings-card">
-                    <h3><i class="fa-solid fa-lock"></i> Security</h3>
-                    <form class="settings-form">
+                    <h3><i class="fa-solid fa-lock"></i> Security Update</h3>
+                    
+                    <form id="security-form">
                         <div class="form-group">
-                            <label>Change Password</label>
-                            <input type="password" placeholder="New Password">
+                            <label>New Password</label>
+                            <input type="password" id="new-password" placeholder="Min 8 chars, 1 Special, 1 Number">
                         </div>
-                        <button class="btn-primary" style="width: auto;">Update Credentials</button>
+                        <div class="form-group">
+                            <label>Confirm Password</label>
+                            <input type="password" id="confirm-password" placeholder="Re-enter to confirm">
+                        </div>
+
+                        <button type="button" id="btn-request-otp" class="btn-primary full-width">
+                            Verify & Update Password
+                        </button>
+
+                        <div id="otp-container" class="hidden" style="margin-top: 20px; border-top: 1px solid #30363d; padding-top: 15px;">
+                            <p style="color: var(--primary-color); font-size: 0.9rem; text-align: center;">
+                                OTP sent to your email. Enter it below.
+                            </p>
+                            <div class="form-group">
+                                <input type="text" id="otp-input" placeholder="XXXXXX" maxlength="6" style="text-align: center; letter-spacing: 4px; font-weight: bold;">
+                            </div>
+                            <button type="button" id="btn-confirm-change" class="btn-primary full-width">
+                                Confirm & Logout
+                            </button>
+                        </div>
                     </form>
                 </div>
+
+                <div class="settings-card">
+                    <h3><i class="fa-solid fa-palette"></i> Appearance</h3>
+                    <div class="form-group">
+                        <label>Interface Theme</label>
+                        <select id="theme-selector" class="theme-select">
+                            <option value="dark">Cyber Dark (Default)</option>
+                            <option value="light">Light Mode</option>
+                            <option value="system">System Default</option>
+                        </select>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
+
     <script src="js/dashboard.js"></script>
-    <script>
-        // Simple logic to fill profile info
-        document.addEventListener('DOMContentLoaded', () => {
-            const user = JSON.parse(localStorage.getItem("sentra_user") || "{}");
-            if(user.name) document.getElementById('setting-name').value = user.name;
-            if(user.email) document.getElementById('setting-email').value = user.email;
-        });
-    </script>
+    <script src="js/settings.js"></script>
 </body>
 </html>
