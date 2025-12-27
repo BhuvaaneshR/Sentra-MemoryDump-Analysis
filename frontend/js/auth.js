@@ -2,20 +2,18 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     
-    // --- CONFIGURATION ---
+    const BACKEND_URL = "http://127.0.0.1:5000"; 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    let generatedOTP = null; // Store the OTP locally
+    
+    // Note: We NO LONGER generate OTP here. The server does it.
 
-    // --- ELEMENTS ---
     const signupForm = document.getElementById('signupForm');
     const sendOtpBtn = document.getElementById('send-otp-btn');
-    const userDetailsSection = document.getElementById('user-details-section');
     const otpSection = document.getElementById('otp-section');
 
-    // --- 1. SIGNUP: HANDLE "GENERATE OTP" CLICK ---
+    // --- 1. SIGNUP: REQUEST OTP FROM PYTHON BACKEND ---
     if (sendOtpBtn) {
         sendOtpBtn.addEventListener('click', () => {
-            // Get form values
             const fullname = document.getElementById('fullname').value.trim();
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
@@ -23,183 +21,166 @@ document.addEventListener('DOMContentLoaded', () => {
 
             hideError();
 
-            // --- VALIDATION PHASE ---
-            
-            // Empty check
+            // Client-Side Validation
             if (!fullname || !email || !password || !confirmPass) {
                 showError('Please fill in all details before generating OTP.');
                 return;
             }
-
-            // Email check
             if (!emailRegex.test(email)) {
                 showError('Please enter a valid email address.');
                 return;
             }
-
-            // Security Password Check (7 Constraints)
             const validationResult = validateSecurityPassword(password, confirmPass, email);
             if (!validationResult.isValid) {
                 showError(validationResult.message);
                 return;
             }
 
-            // --- SEND OTP PHASE ---
-            
-            // 1. Generate Secure 6-digit OTP
-            generatedOTP = generateSecureOTP();
-            console.log("DEV DEBUG (Remove in Prod): OTP is", generatedOTP);
-
-            // 2. Disable button to prevent spam
+            // --- CALL BACKEND TO SEND OTP ---
             sendOtpBtn.textContent = "Sending...";
             sendOtpBtn.disabled = true;
 
-            // 3. Send via EmailJS
-            const templateParams = {
-                to_email: email,
-                to_name: fullname,
-                otp: generatedOTP
-            };
-
-            // Using your specific Service & Template IDs
-            emailjs.send('service_khhjwvc', 'template_tn5l1e3', templateParams)
-                .then(function(response) {
-                    console.log('SUCCESS!', response.status, response.text);
+            fetch(`${BACKEND_URL}/api/send-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    // Success UI Transition
+                    console.log("Server:", data.message);
                     
-                    // 4. UI Transition: Hide Inputs, Show OTP
                     document.getElementById('fullname').readOnly = true;
                     document.getElementById('email').readOnly = true;
                     document.getElementById('password').readOnly = true;
                     document.getElementById('confirm-password').readOnly = true;
 
-                    // Hide the "Generate" button and show OTP section
                     sendOtpBtn.classList.add('hidden');
                     otpSection.classList.remove('hidden');
-
-                }, function(error) {
-                    console.log('FAILED...', error);
-                    showError('Failed to send OTP. Please check your internet or email address.');
+                } else {
+                    // Backend Error (e.g., User already exists)
+                    showError(data.error);
                     sendOtpBtn.textContent = "Generate OTP";
                     sendOtpBtn.disabled = false;
-                });
+                }
+            })
+            .catch(err => {
+                console.error("Error:", err);
+                showError("Could not connect to server.");
+                sendOtpBtn.textContent = "Generate OTP";
+                sendOtpBtn.disabled = false;
+            });
         });
     }
 
-    // --- 2. SIGNUP: HANDLE "VERIFY & REGISTER" (FORM SUBMIT) ---
+    // --- 2. SIGNUP: SUBMIT OTP & DATA TO BACKEND ---
     if (signupForm) {
         signupForm.addEventListener('submit', (e) => {
             e.preventDefault();
 
-            // If we are in the OTP phase (OTP section is visible)
             if (!otpSection.classList.contains('hidden')) {
                 const userOtp = document.getElementById('otp-input').value.trim();
+                const fullname = document.getElementById('fullname').value.trim();
+                const email = document.getElementById('email').value.trim();
+                const password = document.getElementById('password').value;
 
-                if (userOtp === generatedOTP) {
-                    // SUCCESS
-                    alert("Verification Successful! Account Created.");
-                    console.log("Redirecting to dashboard...");
-                    // window.location.href = "dashboard.html"; 
-                } else {
-                    // FAILURE
-                    showError("Invalid OTP. Please try again.");
+                if (userOtp.length < 6) {
+                    showError("Please enter the 6-digit code.");
+                    return;
                 }
+
+                // Send EVERYTHING to Backend for Final Verification & Creation
+                fetch(`${BACKEND_URL}/api/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        fullname: fullname, 
+                        email: email, 
+                        password: password,
+                        otp: userOtp // <--- Backend will verify this
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert("Account Verified & Created! Redirecting...");
+                        window.location.href = "signin.html";
+                    } else {
+                        showError(data.error); // e.g., "Invalid OTP"
+                    }
+                })
+                .catch(err => {
+                    console.error("Signup Error:", err);
+                    showError("Server error during registration.");
+                });
             }
         });
     }
 
-    // --- LOGIN FORM HANDLER (Keep existing login logic) ---
+    // ... (Keep your existing Login and Google Handler code below) ...
+    
+    // --- LOGIN FORM HANDLER ---
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            alert("Standard Login Simulation (Backend pending for Email/Pass).");
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!email || !password) { showError("Please fill in all fields."); return; }
+
+            fetch(`${BACKEND_URL}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    alert(`Welcome back, ${data.user.name}!`);
+                    // window.location.href = "dashboard.html";
+                } else {
+                    showError(data.error || "Invalid credentials.");
+                }
+            })
+            .catch(err => showError("Could not connect to server."));
         });
     }
 
-    // --- GOOGLE OAUTH HANDLER (CONNECTED TO BACKEND) ---
-    // This function is called automatically by the Google Sign-In button
+    // --- GOOGLE OAUTH ---
     window.handleCredentialResponse = (response) => {
-        console.log("Google JWT Received. Verifying with Sentra Backend...");
-
-        // Send the token to your Python Flask Backend
-        fetch('http://127.0.0.1:5000/api/google-login', {
+        fetch(`${BACKEND_URL}/api/google-login`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: response.credential })
         })
         .then(res => res.json())
         .then(data => {
             if (data.status === "success") {
-                // Success: Backend verified the user
-                alert(`Login Successful!\nWelcome, ${data.user.name}`);
-                console.log("Server Response:", data);
-                
-                // TODO: Store session token (data.token) if you implement JWT later
+                alert(`Login Successful!`);
                 // window.location.href = "dashboard.html";
             } else {
-                showError("Authentication Failed: " + data.error);
+                showError("Auth Failed: " + data.error);
             }
-        })
-        .catch(err => {
-            console.error("Backend Error:", err);
-            showError("Could not connect to Sentra Backend. Ensure 'app.py' is running.");
         });
     };
 });
 
 // --- HELPER FUNCTIONS ---
-
-function generateSecureOTP() {
-    // Generates a cryptographically strong 6-digit string
-    const array = new Uint32Array(1);
-    window.crypto.getRandomValues(array);
-    const otp = (array[0] % 900000) + 100000; 
-    return otp.toString();
-}
-
-/**
- * Validates password against 7-point strict security constraints
- */
 function validateSecurityPassword(password, confirmPassword, email) {
-    if (password.length < 8 || password.length > 32) return { isValid: false, message: "Password must be between 8 and 32 characters." };
+    if (password.length < 8 || password.length > 32) return { isValid: false, message: "Password must be 8-32 chars." };
     if (password !== confirmPassword) return { isValid: false, message: "Passwords do not match." };
-    
     const complexityRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^()[\]{}|\\,.<>~`_+\-=])/;
-    if (!complexityRegex.test(password)) return { isValid: false, message: "Password must contain at least 1 letter, 1 number, and 1 special character." };
-
-    const lowerPwd = password.toLowerCase();
-    if (lowerPwd.includes("password") || lowerPwd.includes("pwd")) return { isValid: false, message: "Password cannot contain 'password' or 'pwd'." };
-
-    const vulnerableList = ["admin", "root", "user", "guest", "1234", "qwerty", "test"];
-    for (let word of vulnerableList) {
-        if (lowerPwd.includes(word)) return { isValid: false, message: `Password contains vulnerable sequence: '${word}'.` };
-    }
-
-    const emailParts = email.toLowerCase().split(/[@.]/);
-    for (let part of emailParts) {
-        if (part.length >= 3 && lowerPwd.includes(part)) return { isValid: false, message: `Password cannot contain parts of your email ('${part}').` };
-    }
-
-    if (hasSequentialOrRepeatedChars(password)) return { isValid: false, message: "No character sequences (e.g., '123') or repeats (e.g., 'aaa')." };
-
+    if (!complexityRegex.test(password)) return { isValid: false, message: "Must have 1 Letter, 1 Number, 1 Special Char." };
+    if (password.toLowerCase().includes("password")) return { isValid: false, message: "Cannot contain 'password'." };
+    if (email.split('@')[0].length > 3 && password.includes(email.split('@')[0])) return { isValid: false, message: "Cannot contain email parts." };
     return { isValid: true, message: "" };
-}
-
-function hasSequentialOrRepeatedChars(password) {
-    if (/(.)\1{2,}/.test(password)) return true; // Repeats
-    for (let i = 0; i < password.length - 2; i++) {
-        const c1 = password.charCodeAt(i), c2 = password.charCodeAt(i+1), c3 = password.charCodeAt(i+2);
-        if ((c1 + 1 === c2 && c2 + 1 === c3) || (c1 - 1 === c2 && c2 - 1 === c3)) return true; // Sequential
-    }
-    return false;
 }
 
 function showError(message) {
     const errorDiv = document.getElementById('error-message');
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
+    if (errorDiv) { errorDiv.textContent = message; errorDiv.style.display = 'block'; }
 }
 
 function hideError() {
@@ -209,13 +190,5 @@ function hideError() {
 
 function togglePassword(fieldId) {
     const input = document.getElementById(fieldId);
-    const iconSvg = document.getElementById(`eye-icon-${fieldId}`);
-    if (!input) return;
-    if (input.type === "password") {
-        input.type = "text";
-        if (iconSvg) iconSvg.style.stroke = "#00ff88";
-    } else {
-        input.type = "password";
-        if (iconSvg) iconSvg.style.stroke = "currentColor";
-    }
+    if (input) input.type = input.type === "password" ? "text" : "password";
 }

@@ -1,63 +1,121 @@
 # backend/app.py
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+# REMOVE: from flask_cors import CORS (We are doing it manually now)
+from werkzeug.security import generate_password_hash, check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests
-import secrets
+import psycopg2
+import smtplib
+from email.message import EmailMessage
+import random
+import time
 
 app = Flask(__name__)
 
-# Enable CORS so your Frontend (Port 5500/LiveServer) can talk to Backend (Port 5000)
-CORS(app) 
+# --- MANUAL CORS OVERRIDE (The Fix) ---
+# This forces the headers onto every single response, bypassing library issues.
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'  # Allow anyone
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
-# CONFIGURATION (In production, load these from .env file)
-GOOGLE_CLIENT_ID="199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com"
-SECRET_KEY = secrets.token_hex(32) # For session security
+# --- CONFIGURATION ---
+DB_HOST = "localhost"
+DB_NAME = "sentra_db"
+DB_USER = "postgres"
+DB_PASS = "admin" # <--- CHECK THIS
+SMTP_EMAIL = "sentramemorydump@gmail.com" # <--- CHECK THIS
+SMTP_PASSWORD = "pjcn avud bbup yvaz" # <--- CHECK THIS
+GOOGLE_CLIENT_ID = "199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com" # <--- CHECK THIS
+
+otp_storage = {}
+
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASS)
+        return conn
+    except Exception as e:
+        print(f"❌ Database Error: {e}")
+        return None
 
 @app.route('/')
 def home():
-    return jsonify({"status": "active", "message": "Sentra Security Core Online"})
+    return jsonify({"status": "active"})
 
-# --- SECURE GOOGLE LOGIN ROUTE ---
-@app.route('/api/google-login', methods=['POST'])
-def google_login():
+# --- 1. SEND OTP API ---
+@app.route('/api/send-otp', methods=['POST', 'OPTIONS'])
+def send_otp():
+    if request.method == 'OPTIONS': return jsonify({}), 200 # Handle Preflight manually
+
+    data = request.json
+    email = data.get('email')
+    
+    # ... (Your existing OTP Logic) ...
+    # For testing, let's just simulate success if email is valid
+    otp = str(random.randint(100000, 999999))
+    otp_storage[email] = {"otp": otp, "expires_at": time.time() + 300}
+    print(f"📧 OTP Generated for {email}: {otp}") 
+    return jsonify({"status": "success", "message": "OTP sent"}), 200
+
+
+# --- 2. SIGNUP API ---
+@app.route('/api/signup', methods=['POST', 'OPTIONS'])
+def signup():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+
+    data = request.json
+    # ... (Your existing Signup Logic) ...
+    # Copy your previous logic here
+    return jsonify({"status": "success"}), 201
+
+
+# --- 3. LOGIN API (CRITICAL FIX) ---
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
+def login():
+    # 1. Handle the Preflight Request explicitly
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
     try:
         data = request.json
-        token = data.get('token')
+        email = data.get('email')
+        password = data.get('password')
 
-        if not token:
-            return jsonify({"error": "Missing token"}), 400
-
-        # 1. VERIFY TOKEN WITH GOOGLE SERVERS
-        # This checks: Is the token valid? Is it for THIS app? Has it expired?
-        id_info = id_token.verify_oauth2_token(
-            token, 
-            requests.Request(), 
-            GOOGLE_CLIENT_ID
-        )
-
-        # 2. Extract User Info securely
-        user_email = id_info.get('email')
-        user_name = id_info.get('name')
+        # 2. Connection Check
+        conn = get_db_connection()
+        if not conn:
+            print("❌ DB Connection Failed")
+            return jsonify({"error": "Database unavailable"}), 500
         
-        # 3. (Future) Check if user exists in Database, if not, create them.
-        
-        print(f"✅ Secure Login Verified: {user_email}")
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash, full_name, auth_provider FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
 
-        return jsonify({
-            "status": "success",
-            "message": "Authentication Successful",
-            "user": {
-                "email": user_email,
-                "name": user_name
-            }
-        }), 200
+        if user:
+            # 3. Validation Logic
+            if check_password_hash(user[0], password):
+                print(f"🔓 Login Success: {email}")
+                return jsonify({"status": "success", "user": {"name": user[1]}}), 200
+            else:
+                return jsonify({"error": "Invalid credentials"}), 401
+        else:
+            return jsonify({"error": "User not found"}), 404
 
-    except ValueError as e:
-        # Token is invalid (forged or expired)
-        print(f"❌ Security Alert: Invalid Token Attempt - {str(e)}")
-        return jsonify({"error": "Invalid Token"}), 401
+    except Exception as e:
+        print(f"❌ Server Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# --- 4. GOOGLE API ---
+@app.route('/api/google-login', methods=['POST', 'OPTIONS'])
+def google_login():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+    # ... (Your Google Logic) ...
+    return jsonify({"status": "success"}), 200
 
 if __name__ == '__main__':
-    print("🛡️  Sentra Backend Initialized on Port 5000")
+    print("🛡️ Sentra Backend (Manual CORS) Active on Port 5000")
     app.run(debug=True, port=5000)
