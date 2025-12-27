@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentra | Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-area">
+                <h2>SENTRA</h2>
+                <span class="version">v1.0.0</span>
+            </div>
+
+            <nav class="nav-links">
+                <a href="#" class="active"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
+                <a href="upload.html"><i class="fa-solid fa-upload"></i> New Investigation</a>
+                <a href="#"><i class="fa-solid fa-clock-rotate-left"></i> Case History</a>
+                <a href="#"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
+
+            <div class="user-profile">
+                <div class="avatar">
+                    <i class="fa-solid fa-user-secret"></i>
+                </div>
+                <div class="user-info">
+                    <span id="analyst-name">Loading...</span>
+                    <small id="analyst-email">...</small>
+                </div>
+                <button id="logout-btn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            
+            <header class="top-bar">
+                <h1>Operation Center</h1>
+                <div class="status-badge">
+                    <span id="system-status-dot" class="status-dot"></span>
+                    <span id="system-status-text">Checking Core...</span>
+                </div>
+            </header>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <i class="fa-solid fa-bug"></i>
+                    <div class="stat-info">
+                        <h3>0</h3>
+                        <p>Active Threats</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fa-solid fa-file-shield"></i>
+                    <div class="stat-info">
+                        <h3>0</h3>
+                        <p>Cases Analyzed</p>
+                    </div>
+                </div>
+                <div class="stat-card highlight">
+                    <i class="fa-solid fa-microchip"></i>
+                    <div class="stat-info">
+                        <h3>Ready</h3>
+                        <p>Volatility Engine</p>
+                    </div>
+                </div>
+            </div>
+
+            <section class="action-section">
+                <div class="upload-cta">
+                    <div class="cta-content">
+                        <h2>Start Memory Forensics</h2>
+                        <p>Upload a .raw, .mem, or .vmem file to begin automated artifact extraction.</p>
+                        <a href="upload.html" class="btn-primary large-btn">
+                            <i class="fa-solid fa-plus"></i> Initialize New Case
+                        </a>
+                    </div>
+                    <div class="cta-visual">
+                        <i class="fa-solid fa-magnifying-glass-chart"></i>
+                    </div>
+                </div>
+            </section>
+
+            <section class="recent-cases">
+                <h3>Recent Investigations</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Case ID</th>
+                                <th>File Name</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th>Risk Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: #8b949e; padding: 20px;">
+                                    No cases found. Start a new investigation.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

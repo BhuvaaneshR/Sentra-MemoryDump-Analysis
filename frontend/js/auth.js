@@ -5,8 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const BACKEND_URL = "http://127.0.0.1:5000"; 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
-    // Note: We NO LONGER generate OTP here. The server does it.
-
+    // Elements
     const signupForm = document.getElementById('signupForm');
     const sendOtpBtn = document.getElementById('send-otp-btn');
     const otpSection = document.getElementById('otp-section');
@@ -59,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     sendOtpBtn.classList.add('hidden');
                     otpSection.classList.remove('hidden');
                 } else {
-                    // Backend Error (e.g., User already exists)
+                    // Backend Error
                     showError(data.error);
                     sendOtpBtn.textContent = "Generate OTP";
                     sendOtpBtn.disabled = false;
@@ -90,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // Send EVERYTHING to Backend for Final Verification & Creation
+                // Send EVERYTHING to Backend
                 fetch(`${BACKEND_URL}/api/signup`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -98,16 +97,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         fullname: fullname, 
                         email: email, 
                         password: password,
-                        otp: userOtp // <--- Backend will verify this
+                        otp: userOtp 
                     })
                 })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === "success") {
-                        alert("Account Verified & Created! Redirecting...");
+                        alert("Account Verified & Created! Redirecting to Login...");
                         window.location.href = "signin.html";
                     } else {
-                        showError(data.error); // e.g., "Invalid OTP"
+                        showError(data.error); 
                     }
                 })
                 .catch(err => {
@@ -118,9 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ... (Keep your existing Login and Google Handler code below) ...
-    
-    // --- LOGIN FORM HANDLER ---
+    // --- 3. LOGIN FORM HANDLER (UPDATED FOR DASHBOARD) ---
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', (e) => {
@@ -135,20 +132,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
             })
-            .then(res => res.json())
+            .then(async res => {
+                // Robust JSON check
+                const contentType = res.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error("Server returned non-JSON response (Check Python logs).");
+                }
+                return res.json();
+            })
             .then(data => {
                 if (data.status === "success") {
+                    // 1. Save Session
+                    localStorage.setItem("sentra_user", JSON.stringify(data.user));
+                    
+                    // 2. Redirect to Dashboard
                     alert(`Welcome back, ${data.user.name}!`);
-                    // window.location.href = "dashboard.html";
+                    window.location.href = "home.html";
                 } else {
                     showError(data.error || "Invalid credentials.");
                 }
             })
-            .catch(err => showError("Could not connect to server."));
+            .catch(err => {
+                console.error("Login Error:", err);
+                showError("Connection Error: " + err.message);
+            });
         });
     }
 
-    // --- GOOGLE OAUTH ---
+    // --- 4. GOOGLE OAUTH (UPDATED FOR DASHBOARD) ---
     window.handleCredentialResponse = (response) => {
         fetch(`${BACKEND_URL}/api/google-login`, {
             method: 'POST',
@@ -158,11 +169,19 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(res => res.json())
         .then(data => {
             if (data.status === "success") {
-                alert(`Login Successful!`);
-                // window.location.href = "dashboard.html";
+                // 1. Save Session
+                localStorage.setItem("sentra_user", JSON.stringify(data.user));
+
+                // 2. Redirect to Dashboard
+                alert(`Login Successful! Welcome, ${data.user.name}`);
+                window.location.href = "home.html";
             } else {
                 showError("Auth Failed: " + data.error);
             }
+        })
+        .catch(err => {
+             console.error("Google Auth Error:", err);
+             showError("Server Connection Failed.");
         });
     };
 });
@@ -190,5 +209,15 @@ function hideError() {
 
 function togglePassword(fieldId) {
     const input = document.getElementById(fieldId);
-    if (input) input.type = input.type === "password" ? "text" : "password";
+    const iconSvg = document.getElementById(`eye-icon-${fieldId}`);
+    
+    if (input) {
+        if (input.type === "password") {
+            input.type = "text";
+            if (iconSvg) iconSvg.style.stroke = "#00ff88"; // Green when visible
+        } else {
+            input.type = "password";
+            if (iconSvg) iconSvg.style.stroke = "currentColor"; // Default when hidden
+        }
+    }
 }
