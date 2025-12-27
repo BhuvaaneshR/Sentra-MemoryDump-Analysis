@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentra | New Investigation</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
+            <nav class="nav-links">
+                <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
+                <a href="upload.html" class="active"><i class="fa-solid fa-upload"></i> New Investigation</a>
+                <a href="history.html"><i class="fa-solid fa-clock-rotate-left"></i> Case History</a>
+                <a href="settings.html"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
+                <div class="user-info"><span id="analyst-name">Analyst</span></div>
+                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <h1>New Investigation</h1>
+                <div class="status-badge"><span class="status-dot" style="background:#00ff88;"></span>Ready</div>
+            </header>
+
+            <div class="upload-container">
+                <div id="drop-zone" class="drop-zone">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <h3>Drag & Drop Memory Dump</h3>
+                    <p>Supported: .raw, .mem, .vmem, .img (Max: 8GB)</p>
+                    <input type="file" id="file-input" hidden accept=".raw,.mem,.vmem,.img">
+                    <button class="btn-primary" onclick="document.getElementById('file-input').click()">Browse Files</button>
+                </div>
+
+                <div id="file-preview" class="file-preview hidden">
+                    <div class="file-icon"><i class="fa-solid fa-file-binary"></i></div>
+                    <div class="file-details">
+                        <span id="file-name">memory.dmp</span>
+                        <small id="file-size">4.2 GB</small>
+                    </div>
+                    <i id="remove-file" class="fa-solid fa-xmark remove-btn"></i>
+                </div>
+
+                <div id="upload-progress" class="progress-container hidden">
+                    <div class="progress-bar-bg">
+                        <div id="progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                    <span id="progress-text">Uploading... 0%</span>
+                </div>
+
+                <div class="form-actions">
+                    <button id="start-analysis-btn" class="btn-primary" disabled>
+                        <i class="fa-solid fa-microchip"></i> START ANALYSIS
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="js/dashboard.js"></script> <script src="js/upload.js"></script>    </body>
+</html>

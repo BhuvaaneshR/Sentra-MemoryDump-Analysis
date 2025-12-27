@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentra | Case History</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
+            <nav class="nav-links">
+                <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
+                <a href="upload.html"><i class="fa-solid fa-upload"></i> New Investigation</a>
+                <a href="history.html" class="active"><i class="fa-solid fa-clock-rotate-left"></i> Case History</a>
+                <a href="settings.html"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
+                <div class="user-info"><span id="analyst-name">Analyst</span></div>
+                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <h1>Case History</h1>
+                <div class="filter-bar">
+                    <input type="text" placeholder="Search Case ID or Filename..." class="search-input">
+                    <select class="filter-select">
+                        <option value="all">All Status</option>
+                        <option value="malicious">Malicious</option>
+                        <option value="clean">Clean</option>
+                    </select>
+                </div>
+            </header>
+
+            <div class="table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Case ID</th>
+                            <th>Filename</th>
+                            <th>Date Uploaded</th>
+                            <th>Size</th>
+                            <th>Status</th>
+                            <th>Threat Score</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body">
+                        <tr>
+                            <td>#CASE-001</td>
+                            <td>dump_infected.mem</td>
+                            <td>2023-10-24</td>
+                            <td>4.1 GB</td>
+                            <td><span class="badge danger">Malicious</span></td>
+                            <td>92/100</td>
+                            <td>
+                                <button class="icon-btn" title="Download Report"><i class="fa-solid fa-file-pdf"></i></button>
+                                <button class="icon-btn" title="View Details"><i class="fa-solid fa-eye"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentra | Settings</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
+            <nav class="nav-links">
+                <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
+                <a href="upload.html"><i class="fa-solid fa-upload"></i> New Investigation</a>
+                <a href="history.html"><i class="fa-solid fa-clock-rotate-left"></i> Case History</a>
+                <a href="settings.html" class="active"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
+                <div class="user-info"><span id="analyst-name">Analyst</span></div>
+                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <h1>System Configuration</h1>
+            </header>
+
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <h3><i class="fa-solid fa-user-shield"></i> Analyst Profile</h3>
+                    <form class="settings-form">
+                        <div class="form-group">
+                            <label>Display Name</label>
+                            <input type="text" id="setting-name" disabled value="Loading...">
+                        </div>
+                        <div class="form-group">
+                            <label>Email Address</label>
+                            <input type="email" id="setting-email" disabled value="Loading...">
+                        </div>
+                    </form>
+                </div>
+
+                <div class="settings-card">
+                    <h3><i class="fa-solid fa-lock"></i> Security</h3>
+                    <form class="settings-form">
+                        <div class="form-group">
+                            <label>Change Password</label>
+                            <input type="password" placeholder="New Password">
+                        </div>
+                        <button class="btn-primary" style="width: auto;">Update Credentials</button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="js/dashboard.js"></script>
+    <script>
+        // Simple logic to fill profile info
+        document.addEventListener('DOMContentLoaded', () => {
+            const user = JSON.parse(localStorage.getItem("sentra_user") || "{}");
+            if(user.name) document.getElementById('setting-name').value = user.name;
+            if(user.email) document.getElementById('setting-email').value = user.email;
+        });
+    </script>
+</body>
+</html>

@@ -392,3 +392,75 @@ th {
     color: #8b949e;
     font-weight: 600;
 }
+/* --- UPLOAD PAGE --- */
+.upload-container {
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.drop-zone {
+    border: 2px dashed #30363d;
+    padding: 4rem;
+    border-radius: 12px;
+    background: #161b22;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.drop-zone:hover {
+    border-color: #8b949e;
+}
+
+.drop-zone i {
+    font-size: 3rem;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.drop-zone h3 { color: #c9d1d9; }
+.drop-zone p { color: #8b949e; }
+
+/* File Preview */
+.file-preview {
+    background: #21262d;
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 1rem;
+    border: 1px solid var(--primary-color);
+}
+
+.file-icon { font-size: 1.5rem; color: var(--primary-color); }
+.file-details { flex-grow: 1; text-align: left; }
+.remove-btn { cursor: pointer; color: #ff7b72; }
+
+/* --- HISTORY PAGE --- */
+.filter-bar { display: flex; gap: 10px; }
+.search-input { padding: 8px; border-radius: 4px; border: 1px solid #30363d; background: #0d1117; color: white; }
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+.badge.danger { background: rgba(255, 123, 114, 0.2); color: #ff7b72; }
+.badge.clean { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 1rem;
+    margin: 0 5px;
+}
+.icon-btn:hover { color: white; }
+
+/* --- SETTINGS PAGE --- */
+.settings-grid { display: grid; gap: 2rem; }
+.settings-card { background: #161b22; padding: 1.5rem; border-radius: 8px; border: 1px solid #30363d; }
+.settings-card h3 { border-bottom: 1px solid #30363d; padding-bottom: 1rem; margin-bottom: 1rem; color: var(--primary-color); }
