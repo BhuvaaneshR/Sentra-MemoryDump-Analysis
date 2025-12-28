@@ -10,14 +10,14 @@ import smtplib
 from email.message import EmailMessage
 import random
 import time
+import uuid
 
 app = Flask(__name__)
 
-# --- 1. MANUAL CORS OVERRIDE ---
-# Forces headers on every response to fix connection issues
+# --- 1. MANUAL CORS OVERRIDE (CRITICAL FIX) ---
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Origin'] = '*'  # Allow all origins
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return response
@@ -26,24 +26,33 @@ def add_cors_headers(response):
 DB_HOST = "localhost"
 DB_NAME = "sentra_db"
 DB_USER = "postgres"
-DB_PASS = "admin" 
+DB_PASS = "admin"
 
-# Email Credentials
+# Email
 SMTP_EMAIL = "sentramemorydump@gmail.com"
-SMTP_PASSWORD = "pjcn avud bbup yvaz" 
+SMTP_PASSWORD = "pjcn avud bbup yvaz"
 
-# Google Client ID
-GOOGLE_CLIENT_ID = "199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com" 
+# Google
+GOOGLE_CLIENT_ID = "199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com"
 
-# Upload Configuration
-UPLOAD_FOLDER = 'static/uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+# Directories
+UPLOAD_FOLDER = 'static/uploads'       # Profile photos
+DUMP_FOLDER = 'static/memory_dumps'    # Forensic Memory Dumps
+
+# Limit: 16GB for memory dumps
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 * 1024 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['DUMP_FOLDER'] = DUMP_FOLDER
 
-# Ensure upload directory exists
+# Extensions
+ALLOWED_IMG_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_DUMP_EXTENSIONS = {'raw', 'mem', 'vmem', 'img'}
+
+# Create Folders
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DUMP_FOLDER, exist_ok=True)
 
-# OTP Storage (In-Memory)
+# OTP Storage
 otp_storage = {}
 
 # --- 3. HELPER FUNCTIONS ---
@@ -58,7 +67,7 @@ def get_db_connection():
 def send_email_otp(to_email, otp):
     try:
         msg = EmailMessage()
-        msg.set_content(f"Hello,\n\nYour Sentra Verification Code is: {otp}\n\nThis code expires in 5 minutes.\n\n- Sentra Security Team")
+        msg.set_content(f"Sentra Verification Code: {otp}\nExpires in 5 minutes.")
         msg['Subject'] = "Sentra Security Verification"
         msg['From'] = SMTP_EMAIL
         msg['To'] = to_email
@@ -69,11 +78,11 @@ def send_email_otp(to_email, otp):
         server.quit()
         return True
     except Exception as e:
-        print(f"❌ Email Sending Error: {e}")
+        print(f"❌ Email Error: {e}")
         return False
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def allowed_file(filename, extensions):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in extensions
 
 # --- 4. API ROUTES ---
 
@@ -88,15 +97,10 @@ def send_otp():
 
     data = request.json
     email = data.get('email')
-
-    if not email:
-        return jsonify({"error": "Email is required"}), 400
+    if not email: return jsonify({"error": "Email required"}), 400
 
     otp = str(random.randint(100000, 999999))
-    otp_storage[email] = {
-        "otp": otp,
-        "expires_at": time.time() + 300 
-    }
+    otp_storage[email] = {"otp": otp, "expires_at": time.time() + 300}
 
     if send_email_otp(email, otp):
         print(f"📧 OTP sent to {email}: {otp}")
@@ -115,14 +119,13 @@ def signup():
     password = data.get('password')
     user_otp = data.get('otp')
 
-    # Verify OTP
     record = otp_storage.get(email)
     if not record or time.time() > record['expires_at'] or record['otp'] != user_otp:
-        return jsonify({"error": "Invalid or Expired OTP"}), 400
+        return jsonify({"error": "Invalid/Expired OTP"}), 400
 
     hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
     conn = get_db_connection()
-    if not conn: return jsonify({"error": "Database error"}), 500
+    if not conn: return jsonify({"error": "DB Error"}), 500
 
     try:
         cur = conn.cursor()
@@ -130,10 +133,8 @@ def signup():
         if cur.fetchone():
             return jsonify({"error": "User already exists"}), 400
 
-        cur.execute(
-            "INSERT INTO users (full_name, email, password_hash, auth_provider) VALUES (%s, %s, %s, 'local')",
-            (full_name, email, hashed_pw)
-        )
+        cur.execute("INSERT INTO users (full_name, email, password_hash, auth_provider) VALUES (%s, %s, %s, 'local')", 
+                    (full_name, email, hashed_pw))
         conn.commit()
         del otp_storage[email]
         return jsonify({"status": "success"}), 201
@@ -154,34 +155,25 @@ def login():
         password = data.get('password')
 
         conn = get_db_connection()
-        if not conn: return jsonify({"error": "Database unavailable"}), 500
+        if not conn: return jsonify({"error": "DB Error"}), 500
         
         cur = conn.cursor()
-        # NOTE: This query assumes 'profile_photo' column exists. 
-        # If you get an error, run: ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL;
         cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
         cur.close()
         conn.close()
 
         if user:
-            if user[2] == 'google':
-                 return jsonify({"error": "Please use Google Sign-In"}), 400
+            if user[2] == 'google': return jsonify({"error": "Use Google Sign-In"}), 400
             
             if check_password_hash(user[0], password):
-                # Construct Photo URL
                 photo_url = f"http://127.0.0.1:5000/static/uploads/{user[3]}" if user[3] else None
-                return jsonify({
-                    "status": "success", 
-                    "user": {"name": user[1], "email": email, "photo": photo_url}
-                }), 200
+                return jsonify({"status": "success", "user": {"name": user[1], "email": email, "photo": photo_url}}), 200
             else:
                 return jsonify({"error": "Invalid credentials"}), 401
         else:
             return jsonify({"error": "User not found"}), 404
-
     except Exception as e:
-        print(f"❌ Login Error: {e}")
         return jsonify({"error": "Server Error"}), 500
 
 # --- AUTH: GOOGLE LOGIN ---
@@ -192,57 +184,42 @@ def google_login():
     try:
         data = request.json
         token = data.get('token')
-        
         id_info = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
         email = id_info.get('email')
         name = id_info.get('name')
 
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
 
         if not user:
-            cur.execute(
-                "INSERT INTO users (full_name, email, auth_provider, last_login) VALUES (%s, %s, 'google', NOW())",
-                (name, email)
-            )
+            cur.execute("INSERT INTO users (full_name, email, auth_provider, last_login) VALUES (%s, %s, 'google', NOW())", (name, email))
         else:
             cur.execute("UPDATE users SET last_login = NOW() WHERE email = %s", (email,))
         
-        cur.execute("INSERT INTO audit_logs (user_email, action) VALUES (%s, 'GOOGLE_LOGIN')", (email,))
         conn.commit()
         
         # Fetch Photo
         cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
-        photo_row = cur.fetchone()
-        photo_url = f"http://127.0.0.1:5000/static/uploads/{photo_row[0]}" if photo_row and photo_row[0] else None
-
+        row = cur.fetchone()
+        photo_url = f"http://127.0.0.1:5000/static/uploads/{row[0]}" if row and row[0] else None
+        
         cur.close()
         conn.close()
 
-        return jsonify({
-            "status": "success", 
-            "user": {"email": email, "name": name, "photo": photo_url}
-        }), 200
-
-    except ValueError:
-        return jsonify({"error": "Invalid Token"}), 401
+        return jsonify({"status": "success", "user": {"email": email, "name": name, "photo": photo_url}}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- SETTINGS: GET PROFILE ---
+# --- SETTINGS: PROFILE ---
 @app.route('/api/profile', methods=['POST', 'OPTIONS'])
 def get_profile():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
     data = request.json
     email = data.get('email')
     
     conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Error"}), 500
-
     cur = conn.cursor()
     cur.execute("SELECT full_name, email, profile_photo FROM users WHERE email = %s", (email,))
     user = cur.fetchone()
@@ -251,23 +228,19 @@ def get_profile():
 
     if user:
         photo_url = f"http://127.0.0.1:5000/static/uploads/{user[2]}" if user[2] else None
-        return jsonify({
-            "status": "success", 
-            "data": { "name": user[0], "email": user[1], "photo": photo_url }
-        }), 200
+        return jsonify({"status": "success", "data": { "name": user[0], "email": user[1], "photo": photo_url }}), 200
     return jsonify({"error": "User not found"}), 404
 
 # --- SETTINGS: UPLOAD PHOTO ---
 @app.route('/api/upload-photo', methods=['POST', 'OPTIONS'])
 def upload_photo():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
-    if 'file' not in request.files: return jsonify({"error": "No file part"}), 400
+    if 'file' not in request.files: return jsonify({"error": "No file"}), 400
     
     file = request.files['file']
     email = request.form.get('email')
 
-    if file and allowed_file(file.filename):
+    if file and allowed_file(file.filename, ALLOWED_IMG_EXTENSIONS):
         filename = secure_filename(f"{email}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
@@ -277,51 +250,36 @@ def upload_photo():
         conn.commit()
         cur.close()
         conn.close()
-
-        return jsonify({
-            "status": "success", 
-            "file_url": f"http://127.0.0.1:5000/static/uploads/{filename}"
-        }), 200
-    return jsonify({"error": "Invalid file type"}), 400
+        return jsonify({"status": "success", "file_url": f"http://127.0.0.1:5000/static/uploads/{filename}"}), 200
+    return jsonify({"error": "Invalid file"}), 400
 
 # --- SETTINGS: REMOVE PHOTO ---
 @app.route('/api/remove-photo', methods=['POST', 'OPTIONS'])
 def remove_photo():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
     data = request.json
     email = data.get('email')
 
     conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Error"}), 500
+    cur = conn.cursor()
+    cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
+    row = cur.fetchone()
+    
+    cur.execute("UPDATE users SET profile_photo = NULL WHERE email = %s", (email,))
+    conn.commit()
 
-    try:
-        cur = conn.cursor()
-        # Optional: Get filename to delete from disk
-        cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
-        row = cur.fetchone()
-        
-        # Set to NULL in DB
-        cur.execute("UPDATE users SET profile_photo = NULL WHERE email = %s", (email,))
-        conn.commit()
+    if row and row[0]:
+        path = os.path.join(app.config['UPLOAD_FOLDER'], row[0])
+        if os.path.exists(path): os.remove(path)
 
-        # Optional: Delete file
-        if row and row[0]:
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], row[0])
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-        cur.close()
-        conn.close()
-        return jsonify({"status": "success", "message": "Photo removed"}), 200
-    except Exception as e:
-        return jsonify({"error": "Failed to remove photo"}), 500
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success", "message": "Photo removed"}), 200
 
 # --- SETTINGS: UPDATE PASSWORD ---
 @app.route('/api/update-password', methods=['POST', 'OPTIONS'])
 def update_password():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
     data = request.json
     email = data.get('email')
     new_password = data.get('new_password')
@@ -329,7 +287,7 @@ def update_password():
 
     record = otp_storage.get(email)
     if not record or time.time() > record['expires_at'] or record['otp'] != otp_input:
-        return jsonify({"error": "Invalid or Expired OTP"}), 400
+        return jsonify({"error": "Invalid OTP"}), 400
 
     hashed_pw = generate_password_hash(new_password, method='pbkdf2:sha256')
     conn = get_db_connection()
@@ -338,9 +296,61 @@ def update_password():
     conn.commit()
     cur.close()
     conn.close()
-
     del otp_storage[email]
-    return jsonify({"status": "success", "message": "Password updated"}), 200
+    return jsonify({"status": "success"}), 200
+
+# --- NEW: MEMORY DUMP UPLOAD (CORE FEATURE) ---
+@app.route('/api/upload-dump', methods=['POST', 'OPTIONS'])
+def upload_dump():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+
+    # 1. Validation
+    if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files['file']
+    email = request.form.get('email')
+    
+    if file.filename == '' or not email: return jsonify({"error": "Missing file or email"}), 400
+
+    # 2. Extension Check
+    if file and allowed_file(file.filename, ALLOWED_DUMP_EXTENSIONS):
+        try:
+            # 3. Secure Save
+            original_name = secure_filename(file.filename)
+            unique_id = str(uuid.uuid4())[:8] 
+            stored_name = f"{unique_id}_{original_name}"
+            
+            save_path = os.path.join(app.config['DUMP_FOLDER'], stored_name)
+            file.save(save_path)
+            
+            # Size Calc
+            size_bytes = os.path.getsize(save_path)
+            size_mb = f"{round(size_bytes / (1024 * 1024), 2)} MB"
+
+            # 4. DB Entry
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO cases (user_email, file_name, file_stored_name, file_size, status)
+                VALUES (%s, %s, %s, %s, 'queued')
+                RETURNING case_id
+                """,
+                (email, original_name, stored_name, size_mb)
+            )
+            case_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            print(f"✅ Dump Uploaded: #{case_id} - {original_name}")
+            return jsonify({"status": "success", "case_id": case_id, "file_name": original_name}), 200
+
+        except Exception as e:
+            print(f"❌ Upload Error: {e}")
+            return jsonify({"error": "Upload failed"}), 500
+    
+    return jsonify({"error": "Invalid file type. Only raw/mem/vmem allowed."}), 400
 
 # --- STATIC FILES ---
 @app.route('/static/uploads/<filename>')
@@ -348,5 +358,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000")
+    print("🛡️ Sentra Backend Active on Port 5000 (Max 16GB)")
     app.run(debug=True, port=5000)

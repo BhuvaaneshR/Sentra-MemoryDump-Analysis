@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentra | New Investigation</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -9,7 +10,10 @@
 <body>
     <div class="dashboard-container">
         <aside class="sidebar">
-            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
+            <div class="logo-area">
+                <h2>SENTRA</h2>
+                <span class="version">v1.0.0</span>
+            </div>
             <nav class="nav-links">
                 <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
                 <a href="upload.html" class="active"><i class="fa-solid fa-upload"></i> New Investigation</a>
@@ -19,48 +23,61 @@
             <div class="user-profile">
                 <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
                 <div class="user-info"><span id="analyst-name">Analyst</span></div>
-                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
+                <button id="logout-btn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
             </div>
         </aside>
 
         <main class="main-content">
             <header class="top-bar">
                 <h1>New Investigation</h1>
-                <div class="status-badge"><span class="status-dot" style="background:#00ff88;"></span>Ready</div>
+                <div class="status-badge">
+                    <span class="status-dot" style="background:#00ff88;"></span>System Ready
+                </div>
             </header>
 
             <div class="upload-container">
                 <div id="drop-zone" class="drop-zone">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                     <h3>Drag & Drop Memory Dump</h3>
-                    <p>Supported: .raw, .mem, .vmem, .img (Max: 8GB)</p>
+                    <p>Supported: .raw, .mem, .vmem, .img (Max: 16GB)</p>
                     <input type="file" id="file-input" hidden accept=".raw,.mem,.vmem,.img">
-                    <button class="btn-primary" onclick="document.getElementById('file-input').click()">Browse Files</button>
+                    <button class="btn-primary" onclick="document.getElementById('file-input').click()" style="width: auto;">
+                        Browse Files
+                    </button>
                 </div>
 
                 <div id="file-preview" class="file-preview hidden">
                     <div class="file-icon"><i class="fa-solid fa-file-binary"></i></div>
                     <div class="file-details">
-                        <span id="file-name">memory.dmp</span>
-                        <small id="file-size">4.2 GB</small>
+                        <span id="file-name">filename.mem</span>
+                        <small id="file-size">0 MB</small>
                     </div>
-                    <i id="remove-file" class="fa-solid fa-xmark remove-btn"></i>
+                    <i id="remove-file" class="fa-solid fa-xmark remove-btn" title="Remove File"></i>
                 </div>
 
-                <div id="upload-progress" class="progress-container hidden">
-                    <div class="progress-bar-bg">
-                        <div id="progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                <div id="progress-container" class="hidden" style="margin-top: 25px; text-align: left;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:var(--text-muted); font-size:0.85rem;">
+                        <span><i class="fa-solid fa-shield-halved"></i> Uploading to Secure Sandbox...</span>
+                        <span id="progress-text">0%</span>
                     </div>
-                    <span id="progress-text">Uploading... 0%</span>
+                    <div style="width: 100%; background: var(--border-color); height: 10px; border-radius: 5px; overflow: hidden;">
+                        <div id="progress-bar" style="width: 0%; height: 100%; background: var(--primary-color); transition: width 0.2s ease;"></div>
+                    </div>
                 </div>
 
-                <div class="form-actions">
-                    <button id="start-analysis-btn" class="btn-primary" disabled>
-                        <i class="fa-solid fa-microchip"></i> START ANALYSIS
+                <div class="form-actions" style="margin-top: 30px;">
+                    <button id="start-analysis-btn" class="btn-primary" disabled style="max-width: 300px;">
+                        <i class="fa-solid fa-microchip"></i> UPLOAD & ANALYZE
                     </button>
                 </div>
+
+                <div id="upload-error" class="error-msg" style="margin-top: 20px;"></div>
+                <div id="upload-success" class="success-msg" style="margin-top: 20px;"></div>
             </div>
         </main>
     </div>
-    <script src="js/dashboard.js"></script> <script src="js/upload.js"></script>    </body>
+
+    <script src="js/dashboard.js"></script> 
+    <script src="js/upload.js"></script>    
+</body>
 </html>
