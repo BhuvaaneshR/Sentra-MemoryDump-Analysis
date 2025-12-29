@@ -130,14 +130,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     const response = JSON.parse(xhr.responseText);
                     
                     // Success UI
-                    progressBar.style.backgroundColor = "#00ff88"; // Green
-                    startBtn.innerHTML = '<i class="fa-solid fa-check"></i> Upload Complete';
-                    showSuccess(`Case #${response.case_id} Created. Redirecting to analysis...`);
+                    progressBar.style.backgroundColor = "#00ff88"; 
+                    startBtn.innerHTML = '<i class="fa-solid fa-check"></i> Analysis Started';
+                    showSuccess(`Case #${response.case_id} Submitted. Analysis running in background.`);
                     
                     // Delay redirect to let user see success message
                     setTimeout(() => {
                         // In next phase, redirect to analysis.html?case_id=...
                         alert("File Uploaded Successfully! (Analysis Module Pending)");
+                        window.location.href = "history.html";
                         location.reload(); 
                     }, 2000);
 

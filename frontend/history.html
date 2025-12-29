@@ -27,12 +27,11 @@
             <header class="top-bar">
                 <h1>Case History</h1>
                 <div class="filter-bar">
-                    <input type="text" placeholder="Search Case ID or Filename..." class="search-input">
-                    <select class="filter-select">
-                        <option value="all">All Status</option>
-                        <option value="malicious">Malicious</option>
-                        <option value="clean">Clean</option>
-                    </select>
+                    <input type="text" id="search-input" placeholder="Search Case ID or Filename..." class="search-input">
+                    
+                    <button class="btn-primary" id="refresh-btn" style="width: auto; padding: 8px 15px; margin-left: 10px;">
+                        <i class="fa-solid fa-rotate-right"></i> Refresh
+                    </button>
                 </div>
             </header>
 
@@ -51,15 +50,8 @@
                     </thead>
                     <tbody id="history-body">
                         <tr>
-                            <td>#CASE-001</td>
-                            <td>dump_infected.mem</td>
-                            <td>2023-10-24</td>
-                            <td>4.1 GB</td>
-                            <td><span class="badge danger">Malicious</span></td>
-                            <td>92/100</td>
-                            <td>
-                                <button class="icon-btn" title="Download Report"><i class="fa-solid fa-file-pdf"></i></button>
-                                <button class="icon-btn" title="View Details"><i class="fa-solid fa-eye"></i></button>
+                            <td colspan="7" style="text-align: center; padding: 20px; color: #8b949e;">
+                                Loading cases...
                             </td>
                         </tr>
                     </tbody>
@@ -67,6 +59,7 @@
             </div>
         </main>
     </div>
+
     <script src="js/dashboard.js"></script>
-</body>
+    <script src="js/history.js"></script> </body>
 </html>

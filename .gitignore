@@ -1,0 +1,16 @@
+# --- IGNORE PYTHON CACHE ---
+__pycache__/
+*.py[cod]
+
+# --- IGNORE SENSITIVE USER DATA ---
+# This ignores ALL files inside memory_dumps
+backend/static/memory_dumps/*
+
+# This ignores ALL files inside uploads (profile pics)
+backend/static/uploads/*
+
+# --- KEEP FOLDER STRUCTURE ---
+# This creates an exception (!) so the empty folders are still created
+# when someone else clones the repo, preventing "Folder not found" errors.
+!backend/static/memory_dumps/.gitkeep
+!backend/static/uploads/.gitkeep

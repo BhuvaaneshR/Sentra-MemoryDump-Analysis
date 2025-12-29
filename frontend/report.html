@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentra | Forensic Report</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
+            <nav class="nav-links">
+                <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
+                <a href="upload.html"><i class="fa-solid fa-upload"></i> New Investigation</a>
+                <a href="history.html" class="active"><i class="fa-solid fa-clock-rotate-left"></i> Case History</a>
+                <a href="settings.html"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
+                <div class="user-info"><span id="analyst-name">Analyst</span></div>
+                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <h1>Forensic Analysis Report</h1>
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="window.print()">
+                        <i class="fa-solid fa-print"></i> Print Report
+                    </button>
+                </div>
+            </header>
+
+            <div id="loading-indicator" style="text-align: center; margin-top: 50px;">
+                <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary-color);"></i>
+                <p>Loading Case Data...</p>
+            </div>
+
+            <div id="report-content" class="hidden">
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-file-contract"></i> Case Details</h3>
+                        <p><strong>File Name:</strong> <span id="r-filename">...</span></p>
+                        <p><strong>Date:</strong> <span id="r-date">...</span></p>
+                        <p><strong>Case ID:</strong> <span id="r-id">...</span></p>
+                    </div>
+                    
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-shield-virus"></i> Threat Verdict</h3>
+                        <div class="score-display">
+                            <span id="r-score" class="score-circle">0</span>
+                            <span id="r-verdict">Analyzing...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="report-terminal">
+                    <div class="terminal-header">
+                        <span><i class="fa-solid fa-terminal"></i> Volatility Analysis Log</span>
+                    </div>
+                    <pre id="r-log-output">
+Waiting for analysis data...
+                    </pre>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+    <script src="js/report.js"></script>
+</body>
+</html>
