@@ -85,9 +85,9 @@ def send_email_otp(to_email, otp):
 def allowed_file(filename, extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in extensions
 
-# --- 🚀 ADVANCED ANALYSIS ENGINE (CHAINED PLUGINS) ---
-def run_volatility_analysis(case_id, file_path):
-    print(f"⚙️ [Case #{case_id}] Starting Deep Forensic Analysis on {file_path}...")
+# --- 🚀 MULTI-MODE ANALYSIS ENGINE ---
+def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
+    print(f"⚙️ [Case #{case_id}] Starting {analysis_type.upper()} Analysis on {file_path}...")
     
     conn = get_db_connection()
     if not conn:
@@ -101,29 +101,47 @@ def run_volatility_analysis(case_id, file_path):
         cur.execute("UPDATE cases SET status = 'processing' WHERE case_id = %s", (case_id,))
         conn.commit()
 
-        # 2. Define Plugin Chain
-        plugins = [
-            {'name': 'windows.info', 'desc': 'System Information'},
-            {'name': 'windows.pslist', 'desc': 'Process List Analysis'},
-            {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'},
-            {'name': 'windows.netscan', 'desc': 'Active Network Connections'}
-        ]
+        # 2. Define Plugin Chains based on Analysis Type
+        plugin_chains = {
+            'quick': [
+                {'name': 'windows.info', 'desc': 'System Information'},
+                {'name': 'windows.pslist', 'desc': 'Process List Analysis'}
+            ],
+            'standard': [
+                {'name': 'windows.info', 'desc': 'System Information'},
+                {'name': 'windows.pslist', 'desc': 'Process List Analysis'},
+                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'}
+            ],
+            'deep': [
+                {'name': 'windows.info', 'desc': 'System Information'},
+                {'name': 'windows.pslist', 'desc': 'Process List Analysis'},
+                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'},
+                {'name': 'windows.netscan', 'desc': 'Active Network Connections'},
+                {'name': 'windows.ldrmodules', 'desc': 'Unlinked DLL Check'} # Extra deep check
+            ]
+        }
+
+        # Default to standard if invalid type passed
+        selected_plugins = plugin_chains.get(analysis_type, plugin_chains['standard'])
         
-        full_report_text = ""
+        full_report_text = f"ANALYSIS TYPE: {analysis_type.upper()}\n" + "="*50 + "\n"
         risk_score = 0
         findings = []
 
-        for plugin in plugins:
+        # 3. Execute Plugin Chain
+        for plugin in selected_plugins:
             print(f"--> Running Plugin: {plugin['name']}...")
             
             command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
             
-            # Run Subprocess (Timeout: 20 mins per plugin)
+            # Run Subprocess (Timeout varies by depth)
+            timeout_limit = 600 if analysis_type == 'quick' else 1800
+            
             process = subprocess.run(
                 command, 
                 capture_output=True, 
                 text=True,
-                timeout=1200 
+                timeout=timeout_limit 
             )
 
             output = process.stdout
@@ -131,23 +149,49 @@ def run_volatility_analysis(case_id, file_path):
             if process.returncode == 0:
                 full_report_text += f"\n\n=== [ {plugin['desc']} ] ===\n{output}"
                 
-                # --- HEURISTIC THREAT DETECTION ---
+                # --- ADVANCED THREAT SCORING LOGIC ---
+                
+                # A. Malfind Logic (Injection Detection)
                 if plugin['name'] == 'windows.malfind':
-                    # Check for RWX permissions (often shellcode/injection)
+                    # High Risk: RWX Permissions (Executable/Writable memory)
                     if "PAGE_EXECUTE_READWRITE" in output:
-                        risk_score += 40
-                        findings.append("Detected Memory Injection (RWX Permissions)")
-                    # Check for hidden Executable headers (MZ)
+                        if "Detected Memory Injection (RWX)" not in findings:
+                            risk_score += 40
+                            findings.append("Detected Memory Injection (RWX Permissions)")
+                    
+                    # High Risk: Shellcode patterns (VadS tag without MZ header)
+                    if "VadS" in output and "MZ" not in output:
+                        if "Potential Raw Shellcode" not in findings:
+                            risk_score += 15
+                            findings.append("Potential Raw Shellcode Detected")
+                    
+                    # High Risk: Hidden Executables (MZ header inside VadS)
                     if "MZ" in output and "VadTag" in output:
                         risk_score += 30
-                        findings.append("Detected Hidden Executable (MZ Header)")
+                        findings.append("Detected Hidden Executable (Reflective DLL)")
 
+                # B. Process List Logic
                 if plugin['name'] == 'windows.pslist':
-                    # Check for suspicious processes
-                    bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe'] 
+                    # Medium Risk: Known bad process names
+                    bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe', 'vssadmin.exe'] 
                     for proc in bad_procs:
                         if f" {proc} " in output:
-                            risk_score += 5 # Warning flag
+                            risk_score += 5 # Just a warning, context matters
+
+                # C. Netscan Logic (C2 Detection)
+                if plugin['name'] == 'windows.netscan':
+                    # Medium Risk: High/Suspicious Ports often used for C2/Reverse Shells
+                    suspicious_ports = [':8808', ':4444', ':6667', ':31337', ':8080', ':1337']
+                    for port in suspicious_ports:
+                        if port in output:
+                            if f"Suspicious Port {port}" not in findings:
+                                risk_score += 20
+                                findings.append(f"Suspicious Network Port {port}")
+                    
+                    # Low Risk: Active Established Connections (Persistence)
+                    if "ESTABLISHED" in output:
+                        risk_score += 5
+
             else:
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{process.stderr}"
 
@@ -155,12 +199,17 @@ def run_volatility_analysis(case_id, file_path):
         risk_score = min(risk_score, 100)
         
         # Create Summary Header
-        summary = f"ANALYSIS SUMMARY\nRisk Score: {risk_score}/100\nFindings: {', '.join(findings) if findings else 'No critical threats detected.'}\n" + "="*50
-        full_report_text = summary + full_report_text
+        summary_header = f"RISK VERDICT: {risk_score}/100\n"
+        if findings:
+            summary_header += "THREATS FOUND:\n" + "\n".join([f"- {f}" for f in findings])
+        else:
+            summary_header += "STATUS: Clean / No obvious threats detected."
+            
+        full_report_text = summary_header + "\n" + "="*50 + full_report_text
 
         print(f"✅ [Case #{case_id}] Analysis Complete. Score: {risk_score}")
 
-        # 3. Save Final Report to Database
+        # 4. Save Final Report to Database
         cur.execute(
             """
             UPDATE cases 
@@ -317,6 +366,9 @@ def upload_dump():
     if 'file' not in request.files: return jsonify({"error": "No file"}), 400
     file = request.files['file']
     email = request.form.get('email')
+    
+    # Get Analysis Type (Default to 'standard' if missing)
+    analysis_type = request.form.get('analysis_type', 'standard')
 
     if file and allowed_file(file.filename, ALLOWED_DUMP_EXTENSIONS):
         try:
@@ -339,11 +391,16 @@ def upload_dump():
             conn.commit()
             conn.close()
 
-            # TRIGGER BACKGROUND ANALYSIS
-            thread = threading.Thread(target=run_volatility_analysis, args=(case_id, save_path))
+            # TRIGGER BACKGROUND ANALYSIS (Pass Analysis Type)
+            thread = threading.Thread(target=run_volatility_analysis, args=(case_id, save_path, analysis_type))
             thread.start()
 
-            return jsonify({"status": "success", "case_id": case_id, "file_name": original_name}), 200
+            return jsonify({
+                "status": "success", 
+                "case_id": case_id, 
+                "file_name": original_name,
+                "analysis_type": analysis_type
+            }), 200
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -365,7 +422,6 @@ def get_user_cases():
 
     try:
         cur = conn.cursor()
-        # Fetch latest cases first
         cur.execute("""
             SELECT case_id, file_name, upload_date, file_size, status, risk_score 
             FROM cases 
@@ -431,5 +487,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (Chained Analysis Engine Ready)")
+    print("🛡️ Sentra Backend Active on Port 5000 (Multi-Mode Analysis Ready)")
     app.run(debug=True, port=5000)

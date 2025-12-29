@@ -597,3 +597,86 @@ th { background: var(--bg-color); color: var(--text-muted); font-weight: 600; }
     font-size: 0.9rem;
     line-height: 1.5;
 }
+/* --- ANALYSIS MODE SELECTION --- */
+.config-section {
+    margin-top: 2rem;
+    text-align: left;
+}
+
+.config-section h3 {
+    font-size: 1rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.mode-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.mode-card {
+    position: relative;
+    cursor: pointer;
+}
+
+/* Hide actual radio button */
+.mode-card input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.mode-content {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s;
+}
+
+.mode-content i {
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    display: block;
+}
+
+.mode-content strong {
+    display: block;
+    color: var(--text-color);
+    font-size: 1rem;
+    margin-bottom: 5px;
+}
+
+.mode-content p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 10px 0;
+}
+
+.time-est {
+    font-size: 0.7rem;
+    background: rgba(255,255,255,0.1);
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: var(--text-muted);
+}
+
+/* Selected State */
+.mode-card input:checked + .mode-content {
+    border-color: var(--primary-color);
+    background: rgba(0, 255, 136, 0.05);
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
+}
+
+.mode-card input:checked + .mode-content i {
+    color: var(--primary-color);
+}
+
+.mode-card:hover .mode-content {
+    border-color: var(--text-muted);
+}

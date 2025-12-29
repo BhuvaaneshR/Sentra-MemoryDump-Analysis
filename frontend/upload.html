@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentra | New Investigation</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -10,10 +9,7 @@
 <body>
     <div class="dashboard-container">
         <aside class="sidebar">
-            <div class="logo-area">
-                <h2>SENTRA</h2>
-                <span class="version">v1.0.0</span>
-            </div>
+            <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
             <nav class="nav-links">
                 <a href="home.html"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
                 <a href="upload.html" class="active"><i class="fa-solid fa-upload"></i> New Investigation</a>
@@ -23,27 +19,24 @@
             <div class="user-profile">
                 <div class="avatar"><i class="fa-solid fa-user-secret"></i></div>
                 <div class="user-info"><span id="analyst-name">Analyst</span></div>
-                <button id="logout-btn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
+                <button id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </div>
         </aside>
 
         <main class="main-content">
             <header class="top-bar">
                 <h1>New Investigation</h1>
-                <div class="status-badge">
-                    <span class="status-dot" style="background:#00ff88;"></span>System Ready
-                </div>
+                <div class="status-badge"><span class="status-dot" style="background:#00ff88;"></span>Ready</div>
             </header>
 
             <div class="upload-container">
+                
                 <div id="drop-zone" class="drop-zone">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                     <h3>Drag & Drop Memory Dump</h3>
                     <p>Supported: .raw, .mem, .vmem, .img (Max: 16GB)</p>
                     <input type="file" id="file-input" hidden accept=".raw,.mem,.vmem,.img">
-                    <button class="btn-primary" onclick="document.getElementById('file-input').click()" style="width: auto;">
-                        Browse Files
-                    </button>
+                    <button class="btn-primary" onclick="document.getElementById('file-input').click()" style="width: auto;">Browse Files</button>
                 </div>
 
                 <div id="file-preview" class="file-preview hidden">
@@ -52,7 +45,42 @@
                         <span id="file-name">filename.mem</span>
                         <small id="file-size">0 MB</small>
                     </div>
-                    <i id="remove-file" class="fa-solid fa-xmark remove-btn" title="Remove File"></i>
+                    <i id="remove-file" class="fa-solid fa-xmark remove-btn"></i>
+                </div>
+
+                <div id="analysis-config" class="config-section hidden">
+                    <h3>Select Analysis Depth</h3>
+                    <div class="mode-grid">
+                        <label class="mode-card">
+                            <input type="radio" name="analysis_type" value="quick">
+                            <div class="mode-content">
+                                <i class="fa-solid fa-bolt"></i>
+                                <strong>Quick Scan</strong>
+                                <p>System Info & Process List</p>
+                                <span class="time-est">~5 Mins</span>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="analysis_type" value="standard" checked>
+                            <div class="mode-content">
+                                <i class="fa-solid fa-shield-virus"></i>
+                                <strong>Standard</strong>
+                                <p>+ Malware Injection Check</p>
+                                <span class="time-est">~15 Mins</span>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="analysis_type" value="deep">
+                            <div class="mode-content">
+                                <i class="fa-solid fa-network-wired"></i>
+                                <strong>Deep Dive</strong>
+                                <p>+ Network & Heuristics</p>
+                                <span class="time-est">~30 Mins</span>
+                            </div>
+                        </label>
+                    </div>
                 </div>
 
                 <div id="progress-container" class="hidden" style="margin-top: 25px; text-align: left;">
@@ -67,7 +95,7 @@
 
                 <div class="form-actions" style="margin-top: 30px;">
                     <button id="start-analysis-btn" class="btn-primary" disabled style="max-width: 300px;">
-                        <i class="fa-solid fa-microchip"></i> UPLOAD & ANALYZE
+                        <i class="fa-solid fa-microchip"></i> START ANALYSIS
                     </button>
                 </div>
 
