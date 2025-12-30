@@ -101,23 +101,29 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
         cur.execute("UPDATE cases SET status = 'processing' WHERE case_id = %s", (case_id,))
         conn.commit()
 
-        # 2. Define Plugin Chains based on Analysis Type
+        # 2. Define Plugin Chains based on Analysis Type (UPDATED)
         plugin_chains = {
             'quick': [
                 {'name': 'windows.info', 'desc': 'System Information'},
-                {'name': 'windows.pslist', 'desc': 'Process List Analysis'}
+                {'name': 'windows.pslist', 'desc': 'Process Check'},
+                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'} # Critical for infection check
             ],
             'standard': [
                 {'name': 'windows.info', 'desc': 'System Information'},
-                {'name': 'windows.pslist', 'desc': 'Process List Analysis'},
-                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'}
+                {'name': 'windows.pslist', 'desc': 'Process Check'},
+                {'name': 'windows.netscan', 'desc': 'Network Check'},
+                {'name': 'windows.malfind', 'desc': 'Injection Scan'},
+                {'name': 'windows.dlllist', 'desc': 'Loaded DLLs Check'}
             ],
             'deep': [
                 {'name': 'windows.info', 'desc': 'System Information'},
-                {'name': 'windows.pslist', 'desc': 'Process List Analysis'},
-                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'},
-                {'name': 'windows.netscan', 'desc': 'Active Network Connections'},
-                {'name': 'windows.ldrmodules', 'desc': 'Unlinked DLL Check'} # Extra deep check
+                {'name': 'windows.pslist', 'desc': 'Process Check'},
+                {'name': 'windows.netscan', 'desc': 'Network Check'},
+                {'name': 'windows.malfind', 'desc': 'Injection Scan'},
+                {'name': 'windows.ldrmodules', 'desc': 'Hidden DLL Check'},
+                {'name': 'windows.pstree', 'desc': 'Parent-Child Chain'},
+                {'name': 'windows.dlllist', 'desc': 'Loaded DLLs Check'},
+                {'name': 'windows.callbacks', 'desc': 'Kernel Callbacks (Persistence)'}
             ]
         }
 
@@ -153,7 +159,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                 
                 # A. Malfind Logic (Injection Detection)
                 if plugin['name'] == 'windows.malfind':
-                    # High Risk: RWX Permissions (Executable/Writable memory)
+                    # High Risk: RWX Permissions
                     if "PAGE_EXECUTE_READWRITE" in output:
                         if "Detected Memory Injection (RWX)" not in findings:
                             risk_score += 40
@@ -178,9 +184,8 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                         if f" {proc} " in output:
                             risk_score += 5 # Just a warning, context matters
 
-                # C. Netscan Logic (C2 Detection)
+                # C. Netscan Logic (Standard & Deep Only)
                 if plugin['name'] == 'windows.netscan':
-                    # Medium Risk: High/Suspicious Ports often used for C2/Reverse Shells
                     suspicious_ports = [':8808', ':4444', ':6667', ':31337', ':8080', ':1337']
                     for port in suspicious_ports:
                         if port in output:
@@ -188,9 +193,20 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                                 risk_score += 20
                                 findings.append(f"Suspicious Network Port {port}")
                     
-                    # Low Risk: Active Established Connections (Persistence)
                     if "ESTABLISHED" in output:
                         risk_score += 5
+
+                # D. Hidden Modules (Deep Only)
+                if plugin['name'] == 'windows.ldrmodules':
+                    if output.count("False") > 10: 
+                        risk_score += 25
+                        findings.append("Hidden/Unlinked DLLs detected (Rootkit behavior)")
+
+                # E. DLL List Logic (Standard & Deep)
+                if plugin['name'] == 'windows.dlllist':
+                    if "AppData\\Local\\Temp" in output or "C:\\Temp" in output:
+                        risk_score += 15
+                        findings.append("Suspicious DLL loaded from Temp folder")
 
             else:
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{process.stderr}"
