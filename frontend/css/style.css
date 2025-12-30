@@ -680,3 +680,13 @@ th { background: var(--bg-color); color: var(--text-muted); font-weight: 600; }
 .mode-card:hover .mode-content {
     border-color: var(--text-muted);
 }
+.mode-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #30363d;
+    color: #8b949e;
+    text-transform: uppercase;
+}
+.mode-badge.quick { border: 1px solid #ffdd00; color: #ffdd00; }
+.mode-badge.deep { border: 1px solid #a371f7; color: #a371f7; }

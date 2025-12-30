@@ -22,8 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshBtn.addEventListener('click', () => {
             // Add spin animation to icon for visual feedback
             const icon = refreshBtn.querySelector('i');
-            icon.classList.add('fa-spin');
-            loadCases().then(() => icon.classList.remove('fa-spin'));
+            if(icon) icon.classList.add('fa-spin');
+            
+            loadCases().then(() => {
+                if(icon) icon.classList.remove('fa-spin');
+            });
         });
     }
     
@@ -53,17 +56,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.status === 'success') {
                 renderTable(data.cases);
             } else {
-                tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#ff7b72;">Error: ${data.error}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#ff7b72;">Error: ${data.error}</td></tr>`;
             }
         } catch (err) {
             console.error(err);
-            tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#ff7b72;">Connection Error to Backend</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#ff7b72;">Connection Error to Backend</td></tr>`;
         }
     }
 
     function renderTable(cases) {
         if (cases.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#8b949e;">
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:#8b949e;">
                 <i class="fa-solid fa-folder-open" style="font-size: 2rem; margin-bottom: 10px; display:block;"></i>
                 No cases found. Start a new investigation.
             </td></tr>`;
@@ -73,8 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.innerHTML = cases.map(c => {
             let statusBadge = '';
             let actionBtn = '';
-            let rowClass = '';
-
+            
             // Status Logic
             if (c.status === 'completed') {
                 statusBadge = `<span class="badge clean" style="background:rgba(0,255,136,0.1); color:#00ff88; border:1px solid rgba(0,255,136,0.2);">Completed</span>`;
@@ -108,13 +110,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 else scoreColor = '#00ff88'; // Green (Low Risk)
             }
 
+            // Mode Logic
+            const mode = c.analysis_mode ? c.analysis_mode : 'standard';
+            const modeLabel = mode.toUpperCase();
+
             return `
-                <tr class="${rowClass}">
+                <tr>
                     <td style="font-family:monospace; color:#8b949e;">#${c.case_id}</td>
                     <td style="font-weight:bold;">${c.file_name}</td>
                     <td style="color:#8b949e; font-size:0.85rem;">${c.date}</td>
                     <td style="color:#8b949e; font-size:0.85rem;">${c.size}</td>
                     <td>${statusBadge}</td>
+                    <td><span class="mode-badge ${mode}">${modeLabel}</span></td>
                     <td style="color:${scoreColor}; font-weight:bold; font-family:monospace;">${scoreDisplay}</td>
                     <td>${actionBtn}</td>
                 </tr>

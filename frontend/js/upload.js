@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileSize = document.getElementById('file-size');
     const removeBtn = document.getElementById('remove-file');
     const startBtn = document.getElementById('start-analysis-btn');
-    const configSection = document.getElementById('analysis-config'); // NEW
+    const configSection = document.getElementById('analysis-config'); 
     const progressContainer = document.getElementById('progress-container');
     const progressBar = document.getElementById('progress-bar');
     const progressText = document.getElementById('progress-text');
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         dropZone.classList.add('hidden');
         filePreview.classList.remove('hidden');
-        configSection.classList.remove('hidden'); // SHOW CONFIG OPTIONS
+        configSection.classList.remove('hidden'); 
         startBtn.disabled = false;
         hideError();
     }
@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fileInput.value = "";
             dropZone.classList.remove('hidden');
             filePreview.classList.add('hidden');
-            configSection.classList.add('hidden'); // HIDE CONFIG
+            configSection.classList.add('hidden'); 
             startBtn.disabled = true;
             progressContainer.classList.add('hidden');
             hideError();
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('email', user.email);
-        formData.append('analysis_type', mode); // SEND MODE TO BACKEND
+        formData.append('analysis_type', mode); 
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${BACKEND_URL}/api/upload-dump`, true);
@@ -128,9 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     startBtn.innerHTML = '<i class="fa-solid fa-check"></i> Analysis Started';
                     showSuccess(`Case #${response.case_id} Created (${mode.toUpperCase()} Mode). Redirecting...`);
                     
+                    // --- REDIRECT TO SPECIFIC REPORT (UPDATED) ---
                     setTimeout(() => {
-                        window.location.href = "history.html";
-                    }, 2000);
+                        window.location.href = `report.html?id=${response.case_id}`;
+                    }, 1500);
+
                 } catch (e) {
                     handleError("Invalid server response.");
                 }

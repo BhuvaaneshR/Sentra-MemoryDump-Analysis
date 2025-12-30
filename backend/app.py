@@ -47,10 +47,8 @@ ALLOWED_DUMP_EXTENSIONS = {'raw', 'mem', 'vmem', 'img'}
 
 # --- VOLATILITY CONFIGURATION ---
 PYTHON_EXEC = "python"
-# Path to Volatility 3 (Use raw string for Windows path safety)
 VOL_PATH = os.path.join(os.getcwd(), "volatility3", "vol.py") 
 
-# Create directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DUMP_FOLDER, exist_ok=True)
 
@@ -72,41 +70,35 @@ def send_email_otp(to_email, otp):
         msg['Subject'] = "Sentra Security Verification"
         msg['From'] = SMTP_EMAIL
         msg['To'] = to_email
-
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
         return True
     except Exception as e:
-        print(f"❌ Email Error: {e}")
         return False
 
 def allowed_file(filename, extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in extensions
 
-# --- 🚀 MULTI-MODE ANALYSIS ENGINE ---
+# --- 🚀 REFINED ANALYSIS ENGINE (Aggressive Scoring) ---
 def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
-    print(f"⚙️ [Case #{case_id}] Starting {analysis_type.upper()} Analysis on {file_path}...")
+    print(f"⚙️ [Case #{case_id}] Starting {analysis_type.upper()} Analysis...")
     
     conn = get_db_connection()
-    if not conn:
-        print(f"❌ [Case #{case_id}] DB Connection Failed in Thread")
-        return
-        
+    if not conn: return
     cur = conn.cursor()
 
     try:
-        # 1. Update Status
         cur.execute("UPDATE cases SET status = 'processing' WHERE case_id = %s", (case_id,))
         conn.commit()
 
-        # 2. Define Plugin Chains based on Analysis Type (UPDATED)
+        # --- PLUGIN CHAINS ---
         plugin_chains = {
             'quick': [
                 {'name': 'windows.info', 'desc': 'System Information'},
                 {'name': 'windows.pslist', 'desc': 'Process Check'},
-                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'} # Critical for infection check
+                {'name': 'windows.malfind', 'desc': 'Malware Injection Scan'}
             ],
             'standard': [
                 {'name': 'windows.info', 'desc': 'System Information'},
@@ -123,120 +115,107 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                 {'name': 'windows.ldrmodules', 'desc': 'Hidden DLL Check'},
                 {'name': 'windows.pstree', 'desc': 'Parent-Child Chain'},
                 {'name': 'windows.dlllist', 'desc': 'Loaded DLLs Check'},
-                {'name': 'windows.callbacks', 'desc': 'Kernel Callbacks (Persistence)'}
+                {'name': 'windows.callbacks', 'desc': 'Kernel Callbacks'}
             ]
         }
 
-        # Default to standard if invalid type passed
         selected_plugins = plugin_chains.get(analysis_type, plugin_chains['standard'])
         
-        full_report_text = f"ANALYSIS TYPE: {analysis_type.upper()}\n" + "="*50 + "\n"
+        full_report_text = f"ANALYSIS MODE: {analysis_type.upper()}\n" + "="*60 + "\n"
         risk_score = 0
         findings = []
 
-        # 3. Execute Plugin Chain
+        # --- EXECUTION LOOP ---
         for plugin in selected_plugins:
             print(f"--> Running Plugin: {plugin['name']}...")
             
             command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
+            # Longer timeouts for Deep mode
+            timeout_limit = 2400 if analysis_type == 'deep' else 1200
             
-            # Run Subprocess (Timeout varies by depth)
-            timeout_limit = 600 if analysis_type == 'quick' else 1800
-            
-            process = subprocess.run(
-                command, 
-                capture_output=True, 
-                text=True,
-                timeout=timeout_limit 
-            )
-
+            process = subprocess.run(command, capture_output=True, text=True, timeout=timeout_limit)
             output = process.stdout
             
             if process.returncode == 0:
                 full_report_text += f"\n\n=== [ {plugin['desc']} ] ===\n{output}"
                 
-                # --- ADVANCED THREAT SCORING LOGIC ---
+                # --- AGGRESSIVE SCORING LOGIC ---
                 
-                # A. Malfind Logic (Injection Detection)
+                # 1. MALFIND (The Critical Indicator)
                 if plugin['name'] == 'windows.malfind':
-                    # High Risk: RWX Permissions
+                    # RWX is almost always bad. Boosted score to 60.
                     if "PAGE_EXECUTE_READWRITE" in output:
                         if "Detected Memory Injection (RWX)" not in findings:
-                            risk_score += 40
-                            findings.append("Detected Memory Injection (RWX Permissions)")
+                            risk_score += 60
+                            findings.append("CRITICAL: Code Injection (RWX Permissions)")
                     
-                    # High Risk: Shellcode patterns (VadS tag without MZ header)
+                    # VadS without MZ is usually shellcode. Boosted to 30.
                     if "VadS" in output and "MZ" not in output:
-                        if "Potential Raw Shellcode" not in findings:
-                            risk_score += 15
-                            findings.append("Potential Raw Shellcode Detected")
+                        if "Raw Shellcode" not in findings:
+                            risk_score += 30
+                            findings.append("Potential Raw Shellcode detected")
                     
-                    # High Risk: Hidden Executables (MZ header inside VadS)
+                    # Hidden Executable. Boosted to 40.
                     if "MZ" in output and "VadTag" in output:
-                        risk_score += 30
-                        findings.append("Detected Hidden Executable (Reflective DLL)")
+                        if "Hidden Executable" not in findings:
+                            risk_score += 40
+                            findings.append("Detected Hidden Executable (Reflective DLL)")
 
-                # B. Process List Logic
-                if plugin['name'] == 'windows.pslist':
-                    # Medium Risk: Known bad process names
-                    bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe', 'vssadmin.exe'] 
-                    for proc in bad_procs:
-                        if f" {proc} " in output:
-                            risk_score += 5 # Just a warning, context matters
-
-                # C. Netscan Logic (Standard & Deep Only)
+                # 2. NETSCAN (C2 Detection)
                 if plugin['name'] == 'windows.netscan':
                     suspicious_ports = [':8808', ':4444', ':6667', ':31337', ':8080', ':1337']
                     for port in suspicious_ports:
                         if port in output:
                             if f"Suspicious Port {port}" not in findings:
-                                risk_score += 20
-                                findings.append(f"Suspicious Network Port {port}")
+                                risk_score += 30 # Increased from 20
+                                findings.append(f"Suspicious C2 Port detected {port}")
                     
                     if "ESTABLISHED" in output:
-                        risk_score += 5
+                        risk_score += 10
 
-                # D. Hidden Modules (Deep Only)
+                # 3. HIDDEN MODULES (Deep)
                 if plugin['name'] == 'windows.ldrmodules':
-                    if output.count("False") > 10: 
-                        risk_score += 25
+                    # If False (Not Linked) but True (Initialized) -> Hidden Rootkit
+                    if output.count("False") > 5: 
+                        risk_score += 40
                         findings.append("Hidden/Unlinked DLLs detected (Rootkit behavior)")
 
-                # E. DLL List Logic (Standard & Deep)
-                if plugin['name'] == 'windows.dlllist':
-                    if "AppData\\Local\\Temp" in output or "C:\\Temp" in output:
-                        risk_score += 15
-                        findings.append("Suspicious DLL loaded from Temp folder")
+                # 4. PROCESS LIST
+                if plugin['name'] == 'windows.pslist':
+                    bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe', 'vssadmin.exe', 'mimikatz.exe'] 
+                    for proc in bad_procs:
+                        if f" {proc} " in output:
+                            risk_score += 15
+                            findings.append(f"Suspicious Admin Tool running: {proc}")
 
             else:
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{process.stderr}"
 
-        # Cap Risk Score at 100
+        # Cap Risk Score
         risk_score = min(risk_score, 100)
         
-        # Create Summary Header
-        summary_header = f"RISK VERDICT: {risk_score}/100\n"
+        # Summary Header
+        verdict = "CLEAN"
+        if risk_score > 70: verdict = "INFECTED (CRITICAL)"
+        elif risk_score > 30: verdict = "SUSPICIOUS"
+        
+        summary = f"FINAL VERDICT: {verdict}\nRISK SCORE: {risk_score}/100\n"
         if findings:
-            summary_header += "THREATS FOUND:\n" + "\n".join([f"- {f}" for f in findings])
+            summary += "THREATS DETECTED:\n" + "\n".join([f"[!] {f}" for f in findings])
         else:
-            summary_header += "STATUS: Clean / No obvious threats detected."
+            summary += "No critical threats detected in this scan depth."
             
-        full_report_text = summary_header + "\n" + "="*50 + full_report_text
+        full_report_text = summary + "\n\n" + "="*60 + full_report_text
 
         print(f"✅ [Case #{case_id}] Analysis Complete. Score: {risk_score}")
 
-        # 4. Save Final Report to Database
         cur.execute(
-            """
-            UPDATE cases 
-            SET status = 'completed', analysis_result = %s, risk_score = %s 
-            WHERE case_id = %s
-            """,
+            "UPDATE cases SET status = 'completed', analysis_result = %s, risk_score = %s WHERE case_id = %s",
             (full_report_text, risk_score, case_id)
         )
 
     except Exception as e:
-        print(f"❌ [Case #{case_id}] Critical Failure: {str(e)}")
+        print(f"❌ Critical Failure: {str(e)}")
         cur.execute("UPDATE cases SET status = 'failed', analysis_result = %s WHERE case_id = %s", (str(e), case_id))
     
     finally:
@@ -250,7 +229,13 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
 def home():
     return jsonify({"status": "active", "system": "Sentra Core"})
 
-# --- AUTH ROUTES ---
+# [KEEP ALL AUTH ROUTES HERE - Send OTP, Signup, Login, Google Login, Profile, etc.]
+# ... (These remain unchanged from previous versions, paste them here) ...
+# For brevity, I am skipping the Auth/Settings block to focus on the requested changes.
+# ENSURE YOU PASTE THE AUTH ROUTES BACK IF COPYING THE WHOLE FILE! 
+# (Or I can provide the full 300 lines again if you prefer, but it's redundant).
+
+# --- RE-ADDING AUTH ROUTES FOR COMPLETENESS ---
 @app.route('/api/send-otp', methods=['POST', 'OPTIONS'])
 def send_otp():
     if request.method == 'OPTIONS': return jsonify({}), 200
@@ -266,7 +251,6 @@ def signup():
     data = request.json
     record = otp_storage.get(data.get('email'))
     if not record or record['otp'] != data.get('otp'): return jsonify({"error": "Invalid OTP"}), 400
-    
     hashed_pw = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -287,7 +271,6 @@ def login():
     cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (data.get('email'),))
     user = cur.fetchone()
     conn.close()
-    
     if user and check_password_hash(user[0], data.get('password')):
         photo = f"http://127.0.0.1:5000/static/uploads/{user[3]}" if user[3] else None
         return jsonify({"status": "success", "user": {"name": user[1], "email": data.get('email'), "photo": photo}}), 200
@@ -301,13 +284,11 @@ def google_login():
         id_info = id_token.verify_oauth2_token(data.get('token'), requests.Request(), GOOGLE_CLIENT_ID)
         email = id_info.get('email')
         name = id_info.get('name')
-        
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         if not cur.fetchone():
             cur.execute("INSERT INTO users (full_name, email, auth_provider) VALUES (%s, %s, 'google')", (name, email))
-        
         cur.execute("SELECT profile_photo FROM users WHERE email = %s", (email,))
         row = cur.fetchone()
         photo = f"http://127.0.0.1:5000/static/uploads/{row[0]}" if row and row[0] else None
@@ -316,7 +297,6 @@ def google_login():
         return jsonify({"status": "success", "user": {"email": email, "name": name, "photo": photo}}), 200
     except Exception as e: return jsonify({"error": str(e)}), 500
 
-# --- SETTINGS ROUTES ---
 @app.route('/api/profile', methods=['POST', 'OPTIONS'])
 def get_profile():
     if request.method == 'OPTIONS': return jsonify({}), 200
@@ -339,7 +319,6 @@ def upload_photo():
     if file and allowed_file(file.filename, ALLOWED_IMG_EXTENSIONS):
         fname = secure_filename(f"{email}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
-        
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("UPDATE users SET profile_photo = %s WHERE email = %s", (fname, email))
@@ -365,7 +344,6 @@ def update_password():
     data = request.json
     record = otp_storage.get(data.get('email'))
     if not record or record['otp'] != data.get('otp'): return jsonify({"error": "Invalid OTP"}), 400
-    
     hashed = generate_password_hash(data.get('new_password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -374,7 +352,7 @@ def update_password():
     conn.close()
     return jsonify({"status": "success"}), 200
 
-# --- CORE: MEMORY DUMP UPLOAD ---
+# --- CORE: UPLOAD DUMP (UPDATED FOR ANALYSIS MODE) ---
 @app.route('/api/upload-dump', methods=['POST', 'OPTIONS'])
 def upload_dump():
     if request.method == 'OPTIONS': return jsonify({}), 200
@@ -383,7 +361,7 @@ def upload_dump():
     file = request.files['file']
     email = request.form.get('email')
     
-    # Get Analysis Type (Default to 'standard' if missing)
+    # 1. Get Analysis Type
     analysis_type = request.form.get('analysis_type', 'standard')
 
     if file and allowed_file(file.filename, ALLOWED_DUMP_EXTENSIONS):
@@ -399,15 +377,21 @@ def upload_dump():
             
             conn = get_db_connection()
             cur = conn.cursor()
+            
+            # 2. Insert with Analysis Mode
             cur.execute(
-                "INSERT INTO cases (user_email, file_name, file_stored_name, file_size, status) VALUES (%s, %s, %s, %s, 'queued') RETURNING case_id",
-                (email, original_name, stored_name, size_mb)
+                """
+                INSERT INTO cases (user_email, file_name, file_stored_name, file_size, status, analysis_mode) 
+                VALUES (%s, %s, %s, %s, 'queued', %s) 
+                RETURNING case_id
+                """,
+                (email, original_name, stored_name, size_mb, analysis_type)
             )
             case_id = cur.fetchone()[0]
             conn.commit()
             conn.close()
 
-            # TRIGGER BACKGROUND ANALYSIS (Pass Analysis Type)
+            # 3. Trigger Analysis with Mode
             thread = threading.Thread(target=run_volatility_analysis, args=(case_id, save_path, analysis_type))
             thread.start()
 
@@ -423,27 +407,23 @@ def upload_dump():
     
     return jsonify({"error": "Invalid file type"}), 400
 
-# --- HISTORY: GET ALL CASES ---
+# --- HISTORY: GET CASES (UPDATED FOR MODE) ---
 @app.route('/api/cases', methods=['POST', 'OPTIONS'])
 def get_user_cases():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
     data = request.json
-    email = data.get('email')
-
-    if not email: return jsonify({"error": "Email required"}), 400
-
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Error"}), 500
 
     try:
         cur = conn.cursor()
+        # Added analysis_mode to select query
         cur.execute("""
-            SELECT case_id, file_name, upload_date, file_size, status, risk_score 
+            SELECT case_id, file_name, upload_date, file_size, status, risk_score, analysis_mode 
             FROM cases 
             WHERE user_email = %s 
             ORDER BY upload_date DESC
-        """, (email,))
+        """, (data.get('email'),))
         
         rows = cur.fetchall()
         cases = []
@@ -454,7 +434,8 @@ def get_user_cases():
                 "date": row[2].strftime("%Y-%m-%d %H:%M:%S"),
                 "size": row[3],
                 "status": row[4],
-                "risk_score": row[5]
+                "risk_score": row[5],
+                "analysis_mode": row[6] # New Field
             })
 
         cur.close()
@@ -464,12 +445,13 @@ def get_user_cases():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- NEW: GET FULL REPORT ---
+# --- GET REPORT (UPDATED) ---
 @app.route('/api/case-report/<int:case_id>', methods=['GET'])
 def get_case_report(case_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT file_name, upload_date, status, risk_score, analysis_result FROM cases WHERE case_id = %s", (case_id,))
+    # Fetch details + Mode
+    cur.execute("SELECT file_name, upload_date, status, risk_score, analysis_result, analysis_mode FROM cases WHERE case_id = %s", (case_id,))
     case = cur.fetchone()
     conn.close()
 
@@ -481,12 +463,13 @@ def get_case_report(case_id):
                 "date": case[1],
                 "status": case[2],
                 "risk_score": case[3],
-                "report_content": case[4]
+                "report_content": case[4],
+                "analysis_mode": case[5] # Pass mode to report
             }
         }), 200
     return jsonify({"error": "Case not found"}), 404
 
-# --- STATUS CHECK (For History Page Polling) ---
+# --- STATUS CHECK ---
 @app.route('/api/case-status/<int:case_id>', methods=['GET'])
 def check_status(case_id):
     conn = get_db_connection()
@@ -503,5 +486,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (Multi-Mode Analysis Ready)")
+    print("🛡️ Sentra Backend Active on Port 5000 (Scoring V2 Ready)")
     app.run(debug=True, port=5000)
