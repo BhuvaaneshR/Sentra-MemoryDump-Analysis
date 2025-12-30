@@ -57,7 +57,6 @@ os.makedirs(DUMP_FOLDER, exist_ok=True)
 otp_storage = {}
 
 # Global dictionary to track running scans for stopping
-# Format: { case_id: { 'process': Popen_Object, 'stopped': False } }
 active_scans = {}
 
 # --- 3. HELPER FUNCTIONS ---
@@ -69,7 +68,6 @@ def get_db_connection():
         print(f"❌ Database Error: {e}")
         return None
 
-# UPDATED: Now accepts name and action type for personalized emails
 def send_email_otp(to_email, otp, user_name="User", action="Verification"):
     try:
         msg = EmailMessage()
@@ -105,7 +103,7 @@ def allowed_file(filename, extensions):
 def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
     print(f"⚙️ [Case #{case_id}] Starting {analysis_type.upper()} Analysis...")
     
-    # Register Scan in Global Tracker
+    # Register Scan
     active_scans[case_id] = {'process': None, 'stopped': False}
 
     conn = get_db_connection()
@@ -150,7 +148,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
 
         # 2. Execute Plugin Chain
         for plugin in selected_plugins:
-            # Check Stop Signal BEFORE starting plugin
+            # Check Stop Signal
             if active_scans.get(case_id, {}).get('stopped'):
                 print(f"🛑 [Case #{case_id}] Analysis Stopped by User.")
                 break
@@ -160,7 +158,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
             command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
             timeout_limit = 600 if analysis_type == 'quick' else 1800
             
-            # Start Process (Popen for control)
+            # Start Process
             process = subprocess.Popen(
                 command, 
                 stdout=subprocess.PIPE, 
@@ -168,7 +166,6 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                 text=True
             )
             
-            # Save handle globally
             if case_id in active_scans:
                 active_scans[case_id]['process'] = process
 
@@ -179,70 +176,55 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                 process.kill()
                 stdout, stderr = "", "Timeout"
 
-            # Check Stop Signal AFTER plugin finishes (or is killed)
             if active_scans.get(case_id, {}).get('stopped'):
-                print(f"🛑 [Case #{case_id}] Stopped during plugin execution.")
+                print(f"🛑 [Case #{case_id}] Stopped during execution.")
                 break
 
             if process.returncode == 0:
                 full_report_text += f"\n\n=== [ {plugin['desc']} ] ===\n{stdout}"
                 
                 # --- AGGRESSIVE SCORING LOGIC ---
-                
-                # A. Malfind Logic
                 if plugin['name'] == 'windows.malfind':
                     if "PAGE_EXECUTE_READWRITE" in stdout:
                         if "Detected Memory Injection (RWX)" not in findings:
                             risk_score += 60
                             findings.append("CRITICAL: Detected Memory Injection (RWX Permissions)")
-                    
                     if "VadS" in stdout and "MZ" not in stdout:
                         if "Potential Raw Shellcode" not in findings:
                             risk_score += 30
                             findings.append("Potential Raw Shellcode Detected")
-                    
                     if "MZ" in stdout and "VadTag" in stdout:
                         if "Hidden Executable" not in findings:
                             risk_score += 40
                             findings.append("CRITICAL: Detected Hidden Executable (Reflective DLL)")
 
-                # B. Netscan Logic
                 if plugin['name'] == 'windows.netscan':
                     suspicious_ports = [':8808', ':4444', ':6667', ':31337', ':8080', ':1337']
                     for port in suspicious_ports:
-                        if port in stdout:
-                            if f"Suspicious Port {port}" not in findings:
-                                risk_score += 30
-                                findings.append(f"Suspicious Network Port {port}")
+                        if port in stdout and f"Suspicious Port {port}" not in findings:
+                            risk_score += 30
+                            findings.append(f"Suspicious Network Port {port}")
                     if "ESTABLISHED" in stdout: risk_score += 10
 
-                # C. Hidden Modules
                 if plugin['name'] == 'windows.ldrmodules':
                     if stdout.count("False") > 5: 
                         risk_score += 40
                         findings.append("Hidden/Unlinked DLLs detected (Rootkit behavior)")
 
-                # D. Process List
                 if plugin['name'] == 'windows.pslist':
                     bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe', 'vssadmin.exe', 'mimikatz.exe'] 
                     for proc in bad_procs:
                         if f" {proc} " in stdout:
                             risk_score += 15
                             findings.append(f"Suspicious Admin Tool running: {proc}")
-
             else:
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{stderr}"
 
         # --- FINALIZATION ---
-        
-        # Check if we exited because of a stop
         if active_scans.get(case_id, {}).get('stopped'):
-            return # API handled the DB update, just exit thread
+            return 
 
-        # Cap Risk Score
         risk_score = min(risk_score, 100)
-        
-        # Verdict
         verdict = "CLEAN"
         if risk_score > 70: verdict = "INFECTED (CRITICAL)"
         elif risk_score > 30: verdict = "SUSPICIOUS"
@@ -263,15 +245,12 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
         )
 
     except Exception as e:
-        # Don't error out if user stopped it manually
         if not active_scans.get(case_id, {}).get('stopped'):
             print(f"❌ Critical Failure: {str(e)}")
             cur.execute("UPDATE cases SET status = 'failed', analysis_result = %s WHERE case_id = %s", (str(e), case_id))
     
     finally:
-        # Clean up tracker
-        if case_id in active_scans:
-            del active_scans[case_id]
+        if case_id in active_scans: del active_scans[case_id]
         conn.commit()
         cur.close()
         conn.close()
@@ -282,20 +261,19 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
 def home():
     return jsonify({"status": "active", "system": "Sentra Core"})
 
-# --- AUTH ROUTES (UPDATED FOR LOGIN OTP) ---
-
+# --- AUTH & OTP ---
 @app.route('/api/send-otp', methods=['POST', 'OPTIONS'])
 def send_otp():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
     email = data.get('email')
     
-    # Check type: 'login' or 'signup'
+    # Check type: 'login', 'signup', or 'delete'
     req_type = data.get('type', 'signup') 
     full_name = "User"
 
-    # If Login, fetch name from DB
-    if req_type == 'login':
+    # For Login/Delete, fetch name from DB
+    if req_type in ['login', 'delete']:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT full_name FROM users WHERE email = %s", (email,))
@@ -305,15 +283,17 @@ def send_otp():
             return jsonify({"error": "Email not registered"}), 404
         full_name = row[0]
     
-    # If Signup, use provided name
+    # For Signup, use provided name
     elif req_type == 'signup':
         full_name = data.get('fullname', 'User')
 
     otp = str(random.randint(100000, 999999))
     otp_storage[email] = {"otp": otp, "expires_at": time.time() + 300}
     
-    # Send personalized email
-    send_email_otp(email, otp, full_name, req_type.capitalize())
+    # Determine Action Label
+    action_label = "Deletion Authorization" if req_type == 'delete' else req_type.capitalize()
+    
+    send_email_otp(email, otp, full_name, action_label)
     
     return jsonify({"status": "success"}), 200
 
@@ -321,12 +301,9 @@ def send_otp():
 def signup():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
-    
-    # Verify OTP
     record = otp_storage.get(data.get('email'))
     if not record or record['otp'] != data.get('otp'): 
         return jsonify({"error": "Invalid OTP"}), 400
-    
     hashed_pw = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -334,7 +311,6 @@ def signup():
         cur.execute("INSERT INTO users (full_name, email, password_hash, auth_provider) VALUES (%s, %s, %s, 'local')", 
                     (data.get('fullname'), data.get('email'), hashed_pw))
         conn.commit()
-        # Clean up OTP
         del otp_storage[data.get('email')]
         return jsonify({"status": "success"}), 201
     except: return jsonify({"error": "User exists"}), 400
@@ -346,19 +322,15 @@ def login():
     data = request.json
     email = data.get('email')
     password = data.get('password')
-    otp = data.get('otp') # Now required
+    otp = data.get('otp')
 
-    # 1. Verify OTP first
+    # Verify OTP
     record = otp_storage.get(email)
-    if not record or record['otp'] != otp:
-        return jsonify({"error": "Invalid or Expired OTP"}), 400
-        
-    # Check expiry
+    if not record or record['otp'] != otp: return jsonify({"error": "Invalid or Expired OTP"}), 400
     if time.time() > record['expires_at']:
         del otp_storage[email]
         return jsonify({"error": "OTP Expired"}), 400
 
-    # 2. Verify Credentials
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (email,))
@@ -366,12 +338,9 @@ def login():
     conn.close()
     
     if user and check_password_hash(user[0], password):
-        # Clear OTP on success
         del otp_storage[email]
-        
         photo = f"http://127.0.0.1:5000/static/uploads/{user[3]}" if user[3] else None
         return jsonify({"status": "success", "user": {"name": user[1], "email": email, "photo": photo}}), 200
-    
     return jsonify({"error": "Invalid Password"}), 401
 
 @app.route('/api/google-login', methods=['POST', 'OPTIONS'])
@@ -454,11 +423,9 @@ def update_password():
 @app.route('/api/upload-dump', methods=['POST', 'OPTIONS'])
 def upload_dump():
     if request.method == 'OPTIONS': return jsonify({}), 200
-
     if 'file' not in request.files: return jsonify({"error": "No file"}), 400
     file = request.files['file']
     email = request.form.get('email')
-    
     analysis_type = request.form.get('analysis_type', 'standard')
 
     if file and allowed_file(file.filename, ALLOWED_DUMP_EXTENSIONS):
@@ -470,66 +437,82 @@ def upload_dump():
             file.save(save_path)
             
             size_mb = f"{round(os.path.getsize(save_path) / (1024 * 1024), 2)} MB"
-            
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute(
-                """
-                INSERT INTO cases (user_email, file_name, file_stored_name, file_size, status, analysis_mode) 
-                VALUES (%s, %s, %s, %s, 'queued', %s) 
-                RETURNING case_id
-                """,
+                "INSERT INTO cases (user_email, file_name, file_stored_name, file_size, status, analysis_mode) VALUES (%s, %s, %s, %s, 'queued', %s) RETURNING case_id",
                 (email, original_name, stored_name, size_mb, analysis_type)
             )
             case_id = cur.fetchone()[0]
             conn.commit()
             conn.close()
 
-            # Start Analysis Thread
             thread = threading.Thread(target=run_volatility_analysis, args=(case_id, save_path, analysis_type))
             thread.start()
-
-            return jsonify({
-                "status": "success", 
-                "case_id": case_id, 
-                "file_name": original_name,
-                "analysis_type": analysis_type
-            }), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    
+            return jsonify({"status": "success", "case_id": case_id, "file_name": original_name, "analysis_type": analysis_type}), 200
+        except Exception as e: return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Invalid file type"}), 400
 
-# --- NEW: STOP ANALYSIS ENDPOINT ---
+# --- STOP ANALYSIS ---
 @app.route('/api/stop-analysis/<int:case_id>', methods=['POST', 'OPTIONS'])
 def stop_analysis(case_id):
     if request.method == 'OPTIONS': return jsonify({}), 200
-    
     print(f"🛑 Stop Request received for Case #{case_id}")
     
-    # 1. Check if scan is running
     if case_id in active_scans:
-        # Mark as stopped so thread exits loop
         active_scans[case_id]['stopped'] = True
-        
-        # Kill Process
         proc = active_scans[case_id]['process']
         if proc and proc.poll() is None:
             proc.terminate()
             print(f"   - Terminated subprocess for Case #{case_id}")
 
-        # 2. Update DB
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("UPDATE cases SET status = 'cancelled', analysis_result = 'Analysis stopped by user.' WHERE case_id = %s", (case_id,))
         conn.commit()
         cur.close()
         conn.close()
-        
         return jsonify({"status": "success", "message": "Analysis stopped"}), 200
     
     return jsonify({"error": "Analysis not active"}), 400
+
+# --- NEW: DELETE CASE (SECURE DELETION) ---
+@app.route('/api/delete-case', methods=['POST', 'OPTIONS'])
+def delete_case():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+    data = request.json
+    email = data.get('email')
+    case_id = data.get('case_id')
+    otp = data.get('otp')
+
+    # 1. Verify OTP
+    record = otp_storage.get(email)
+    if not record or record['otp'] != otp:
+        return jsonify({"error": "Invalid or Expired OTP"}), 400
+    
+    # 2. Perform Delete
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Get filename to delete from disk
+        cur.execute("DELETE FROM cases WHERE case_id = %s AND user_email = %s RETURNING file_stored_name", (case_id, email))
+        row = cur.fetchone()
+        
+        if row:
+            # Delete physical file
+            file_path = os.path.join(app.config['DUMP_FOLDER'], row[0])
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except: pass # Ignore lock errors
+            
+            conn.commit()
+            del otp_storage[email] # Clear OTP
+            return jsonify({"status": "success"}), 200
+        else:
+            return jsonify({"error": "Case not found or unauthorized"}), 404
+    except Exception as e: return jsonify({"error": str(e)}), 500
+    finally: conn.close()
 
 # --- HISTORY: GET CASES ---
 @app.route('/api/cases', methods=['POST', 'OPTIONS'])
@@ -538,7 +521,6 @@ def get_user_cases():
     data = request.json
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Error"}), 500
-
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -547,7 +529,6 @@ def get_user_cases():
             WHERE user_email = %s 
             ORDER BY upload_date DESC
         """, (data.get('email'),))
-        
         rows = cur.fetchall()
         cases = []
         for row in rows:
@@ -565,6 +546,26 @@ def get_user_cases():
         return jsonify({"status": "success", "cases": cases}), 200
     except Exception as e: return jsonify({"error": str(e)}), 500
 
+# --- NEW: DASHBOARD STATS ---
+@app.route('/api/dashboard-stats', methods=['POST', 'OPTIONS'])
+def dashboard_stats():
+    if request.method == 'OPTIONS': return jsonify({}), 200
+    data = request.json
+    email = data.get('email')
+    
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB connection failed"}), 500
+    
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM cases WHERE user_email = %s", (email,))
+        count = cur.fetchone()[0]
+        return jsonify({"status": "success", "total_cases": count}), 200
+    except Exception as e: return jsonify({"error": str(e)}), 500
+    finally: 
+        cur.close()
+        conn.close()
+
 # --- GET REPORT ---
 @app.route('/api/case-report/<int:case_id>', methods=['GET'])
 def get_case_report(case_id):
@@ -573,7 +574,6 @@ def get_case_report(case_id):
     cur.execute("SELECT file_name, upload_date, status, risk_score, analysis_result, analysis_mode FROM cases WHERE case_id = %s", (case_id,))
     case = cur.fetchone()
     conn.close()
-
     if case:
         return jsonify({
             "status": "success",
@@ -605,5 +605,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (Interruptible + Aggressive Scoring)")
+    print("🛡️ Sentra Backend Active on Port 5000 (Delete + Stats Added)")
     app.run(debug=True, port=5000)

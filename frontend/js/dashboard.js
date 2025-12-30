@@ -39,6 +39,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
     }
+
+    // 6. DASHBOARD STATS FETCH (NEW)
+    // This updates the "Cases Analysed" number on home.html
+    const totalCasesEl = document.getElementById('total-cases-count');
+    
+    if (totalCasesEl && userData.email) {
+        fetch(`${BACKEND_URL}/api/dashboard-stats`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: userData.email })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                totalCasesEl.textContent = data.total_cases;
+            }
+        })
+        .catch(err => console.error("Stats Error:", err));
+    }
 });
 
 /**

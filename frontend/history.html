@@ -44,7 +44,8 @@
                             <th>Date Uploaded</th>
                             <th>Size</th>
                             <th>Status</th>
-                            <th>Mode</th> <th>Threat Score</th>
+                            <th>Mode</th>
+                            <th>Threat Score</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -58,6 +59,27 @@
                 </table>
             </div>
         </main>
+    </div>
+
+    <div id="delete-modal" class="modal hidden">
+        <div class="modal-content">
+            <i class="fa-solid fa-triangle-exclamation" style="font-size: 3rem; color: #ff7b72; margin-bottom: 20px;"></i>
+            <h3>Confirm Deletion</h3>
+            <p style="color: #8b949e; margin-bottom: 20px; line-height: 1.5;">
+                This action is <strong>irreversible</strong>.<br>
+                For security, a verification code has been sent to your email.
+            </p>
+            
+            <div class="form-group" style="display: flex; justify-content: center; margin-bottom: 20px;">
+                <input type="text" id="delete-otp-input" placeholder="Enter 6-digit Code" maxlength="6" 
+                       style="text-align: center; letter-spacing: 4px; font-size: 1.2rem; width: 220px; padding: 10px; background: #0d1117; border: 1px solid #30363d; color: white; border-radius: 6px;">
+            </div>
+            
+            <div class="modal-actions">
+                <button id="cancel-delete-btn" class="btn-secondary" style="border: 1px solid #30363d; background: transparent; color: #c9d1d9;">Cancel</button>
+                <button id="confirm-delete-btn" class="btn-danger">Delete Permanently</button>
+            </div>
+        </div>
     </div>
 
     <script src="js/dashboard.js"></script>
