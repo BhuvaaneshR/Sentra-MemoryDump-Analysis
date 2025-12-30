@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentra | Secure Login</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -14,9 +15,9 @@
             <p>Memory Forensics Platform - Sign In</p>
         </div>
 
-        <div id="error-message" class="error-msg">Invalid credentials.</div>
+        <div id="error-message" class="error-msg" style="display: none;"></div>
 
-        <form id="loginForm">
+        <form id="loginForm" onsubmit="event.preventDefault();">
             <div class="form-group">
                 <label for="email">Email Address</label>
                 <input type="email" id="email" name="email" required 
@@ -35,10 +36,23 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-primary">SIGN IN</button>
+            <div class="form-group">
+                <label for="otp">Verification Code</label>
+                <div class="otp-group" style="display: flex; gap: 10px;">
+                    <input type="text" id="otp" name="otp" placeholder="6-digit code" maxlength="6" 
+                           style="flex: 1; text-align: center; letter-spacing: 3px; font-weight: bold;" required>
+                    
+                    <button type="button" id="get-code-btn" class="btn-secondary" style="width: auto; padding: 0 15px; white-space: nowrap; border: 1px solid var(--primary-color); background: transparent; color: var(--primary-color); cursor: pointer; border-radius: 4px;">
+                        Get Code
+                    </button>
+                </div>
+                <small id="otp-msg" style="display: none; margin-top: 5px; font-size: 0.8rem; color: #00ff88;"></small>
+            </div>
+
+            <button type="submit" id="login-btn" class="btn-primary">SIGN IN</button>
         </form>
 
-        <div class="google-btn-container">
+        <div class="google-btn-container" style="margin-top: 20px;">
             <div id="g_id_onload"
                  data-client_id="199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com"
                  data-context="signin"
@@ -64,5 +78,19 @@
     </div>
 
     <script src="js/auth.js"></script>
+    
+    <script>
+        function togglePassword(fieldId) {
+            const input = document.getElementById(fieldId);
+            const icon = document.getElementById('eye-icon-' + fieldId);
+            if (input.type === "password") {
+                input.type = "text";
+                icon.style.opacity = "0.5";
+            } else {
+                input.type = "password";
+                icon.style.opacity = "1";
+            }
+        }
+    </script>
 </body>
 </html>

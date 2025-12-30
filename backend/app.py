@@ -47,7 +47,7 @@ ALLOWED_DUMP_EXTENSIONS = {'raw', 'mem', 'vmem', 'img'}
 
 # --- VOLATILITY CONFIGURATION ---
 PYTHON_EXEC = "python"
-# Path to Volatility 3 (Use raw string for Windows path safety)
+# Path to Volatility 3
 VOL_PATH = os.path.join(os.getcwd(), "volatility3", "vol.py") 
 
 # Create directories
@@ -69,11 +69,23 @@ def get_db_connection():
         print(f"❌ Database Error: {e}")
         return None
 
-def send_email_otp(to_email, otp):
+# UPDATED: Now accepts name and action type for personalized emails
+def send_email_otp(to_email, otp, user_name="User", action="Verification"):
     try:
         msg = EmailMessage()
-        msg.set_content(f"Sentra Verification Code: {otp}\nExpires in 5 minutes.")
-        msg['Subject'] = "Sentra Security Verification"
+        
+        # Personalized Content
+        content = f"""Dear {user_name},
+
+Your Sentra Verification Code for {action} is {otp}
+
+The code expires in 5 minutes.
+
+Regards,
+Sentra Security Team
+"""
+        msg.set_content(content)
+        msg['Subject'] = f"Sentra {action} Verification"
         msg['From'] = SMTP_EMAIL
         msg['To'] = to_email
 
@@ -270,22 +282,51 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
 def home():
     return jsonify({"status": "active", "system": "Sentra Core"})
 
-# --- AUTH ROUTES ---
+# --- AUTH ROUTES (UPDATED FOR LOGIN OTP) ---
+
 @app.route('/api/send-otp', methods=['POST', 'OPTIONS'])
 def send_otp():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
+    email = data.get('email')
+    
+    # Check type: 'login' or 'signup'
+    req_type = data.get('type', 'signup') 
+    full_name = "User"
+
+    # If Login, fetch name from DB
+    if req_type == 'login':
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT full_name FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Email not registered"}), 404
+        full_name = row[0]
+    
+    # If Signup, use provided name
+    elif req_type == 'signup':
+        full_name = data.get('fullname', 'User')
+
     otp = str(random.randint(100000, 999999))
-    otp_storage[data.get('email')] = {"otp": otp, "expires_at": time.time() + 300}
-    send_email_otp(data.get('email'), otp)
+    otp_storage[email] = {"otp": otp, "expires_at": time.time() + 300}
+    
+    # Send personalized email
+    send_email_otp(email, otp, full_name, req_type.capitalize())
+    
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/signup', methods=['POST', 'OPTIONS'])
 def signup():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
+    
+    # Verify OTP
     record = otp_storage.get(data.get('email'))
-    if not record or record['otp'] != data.get('otp'): return jsonify({"error": "Invalid OTP"}), 400
+    if not record or record['otp'] != data.get('otp'): 
+        return jsonify({"error": "Invalid OTP"}), 400
+    
     hashed_pw = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -293,6 +334,8 @@ def signup():
         cur.execute("INSERT INTO users (full_name, email, password_hash, auth_provider) VALUES (%s, %s, %s, 'local')", 
                     (data.get('fullname'), data.get('email'), hashed_pw))
         conn.commit()
+        # Clean up OTP
+        del otp_storage[data.get('email')]
         return jsonify({"status": "success"}), 201
     except: return jsonify({"error": "User exists"}), 400
     finally: conn.close()
@@ -301,15 +344,35 @@ def signup():
 def login():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    otp = data.get('otp') # Now required
+
+    # 1. Verify OTP first
+    record = otp_storage.get(email)
+    if not record or record['otp'] != otp:
+        return jsonify({"error": "Invalid or Expired OTP"}), 400
+        
+    # Check expiry
+    if time.time() > record['expires_at']:
+        del otp_storage[email]
+        return jsonify({"error": "OTP Expired"}), 400
+
+    # 2. Verify Credentials
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (data.get('email'),))
+    cur.execute("SELECT password_hash, full_name, auth_provider, profile_photo FROM users WHERE email = %s", (email,))
     user = cur.fetchone()
     conn.close()
-    if user and check_password_hash(user[0], data.get('password')):
+    
+    if user and check_password_hash(user[0], password):
+        # Clear OTP on success
+        del otp_storage[email]
+        
         photo = f"http://127.0.0.1:5000/static/uploads/{user[3]}" if user[3] else None
-        return jsonify({"status": "success", "user": {"name": user[1], "email": data.get('email'), "photo": photo}}), 200
-    return jsonify({"error": "Invalid"}), 401
+        return jsonify({"status": "success", "user": {"name": user[1], "email": email, "photo": photo}}), 200
+    
+    return jsonify({"error": "Invalid Password"}), 401
 
 @app.route('/api/google-login', methods=['POST', 'OPTIONS'])
 def google_login():
