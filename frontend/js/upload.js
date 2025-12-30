@@ -4,11 +4,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const BACKEND_URL = "http://127.0.0.1:5000";
     const user = JSON.parse(localStorage.getItem("sentra_user") || "{}");
 
+    // 1. Auth Check
     if (!user.email) {
-        window.location.href = "signin.html";
+        window.location.replace("signin.html");
         return;
     }
 
+    // 2. Element Selection
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const filePreview = document.getElementById('file-preview');
@@ -16,14 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileSize = document.getElementById('file-size');
     const removeBtn = document.getElementById('remove-file');
     const startBtn = document.getElementById('start-analysis-btn');
+    // Stop Button Element (Ensure this exists in your HTML)
+    const stopBtn = document.getElementById('stop-analysis-btn'); 
     const configSection = document.getElementById('analysis-config'); 
     const progressContainer = document.getElementById('progress-container');
     const progressBar = document.getElementById('progress-bar');
     const progressText = document.getElementById('progress-text');
     
     let selectedFile = null;
+    let activeCaseId = null; // Track current case for stopping
 
-    // --- 1. DRAG & DROP ---
+    // --- DRAG & DROP HANDLERS ---
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.style.borderColor = '#00ff88';
@@ -45,10 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
         handleFileSelect(e.target.files[0]);
     });
 
-    // --- 2. FILE SELECTION ---
+    // --- FILE SELECTION LOGIC ---
     function handleFileSelect(file) {
         if (!file) return;
 
+        // Validation
         const allowedExts = ['raw', 'mem', 'vmem', 'img'];
         const ext = file.name.split('.').pop().toLowerCase();
         
@@ -57,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const maxSize = 16 * 1024 * 1024 * 1024;
+        const maxSize = 16 * 1024 * 1024 * 1024; // 16GB
         if (file.size > maxSize) {
             showError("File too large. Maximum size is 16GB.");
             return;
@@ -65,37 +71,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
         selectedFile = file;
 
-        // UI Updates
+        // Update UI
         fileName.textContent = file.name;
         fileSize.textContent = (file.size / (1024*1024)).toFixed(2) + " MB";
         
         dropZone.classList.add('hidden');
         filePreview.classList.remove('hidden');
-        configSection.classList.remove('hidden'); 
+        if(configSection) configSection.classList.remove('hidden'); 
         startBtn.disabled = false;
         hideError();
     }
 
     if (removeBtn) {
         removeBtn.addEventListener('click', () => {
-            selectedFile = null;
-            fileInput.value = "";
-            dropZone.classList.remove('hidden');
-            filePreview.classList.add('hidden');
-            configSection.classList.add('hidden'); 
-            startBtn.disabled = true;
-            progressContainer.classList.add('hidden');
-            hideError();
-            hideSuccess();
+            // Reset Page
+            window.location.reload();
         });
     }
 
-    // --- 3. UPLOAD LOGIC ---
+    // --- STOP ANALYSIS LOGIC ---
+    if (stopBtn) {
+        stopBtn.addEventListener('click', async () => {
+            if(!activeCaseId) return;
+            if(!confirm("Are you sure you want to stop the analysis?")) return;
+
+            try {
+                stopBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Stopping...';
+                stopBtn.disabled = true;
+
+                const res = await fetch(`${BACKEND_URL}/api/stop-analysis/${activeCaseId}`, {
+                    method: 'POST'
+                });
+                
+                if(res.ok) {
+                    progressBar.style.backgroundColor = "#ff7b72"; // Red
+                    startBtn.style.display = 'inline-block';
+                    startBtn.innerHTML = '<i class="fa-solid fa-ban"></i> Cancelled';
+                    stopBtn.style.display = 'none';
+                    showError("Analysis stopped by user.");
+                    
+                    // Redirect to history to see "Cancelled" status
+                    setTimeout(() => window.location.replace("history.html"), 1000);
+                }
+            } catch(e) {
+                console.error(e);
+                showError("Failed to stop analysis.");
+            }
+        });
+    }
+
+    // --- UPLOAD START LOGIC ---
     startBtn.addEventListener('click', () => {
         if (!selectedFile) return;
 
-        // GET SELECTED MODE
-        const mode = document.querySelector('input[name="analysis_type"]:checked').value;
+        // Get Mode
+        let mode = 'standard';
+        const modeInput = document.querySelector('input[name="analysis_type"]:checked');
+        if (modeInput) mode = modeInput.value;
 
         // UI Prep
         startBtn.disabled = true;
@@ -112,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${BACKEND_URL}/api/upload-dump`, true);
 
+        // Progress Handler
         xhr.upload.onprogress = function(e) {
             if (e.lengthComputable) {
                 const percentComplete = Math.round((e.loaded / e.total) * 100);
@@ -120,34 +153,49 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
+        // Completion Handler
         xhr.onload = function() {
             if (xhr.status === 200) {
                 try {
                     const response = JSON.parse(xhr.responseText);
-                    progressBar.style.backgroundColor = "#00ff88";
-                    startBtn.innerHTML = '<i class="fa-solid fa-check"></i> Analysis Started';
-                    showSuccess(`Case #${response.case_id} Created (${mode.toUpperCase()} Mode). Redirecting...`);
+                    console.log("Upload Success:", response); 
+                    activeCaseId = response.case_id;
+
+                    // Update UI to Processing State
+                    progressBar.style.backgroundColor = "#ffdd00"; // Yellow
+                    progressText.textContent = "Processing...";
+                    startBtn.style.display = 'none'; // Hide Start
                     
-                    // --- REDIRECT TO SPECIFIC REPORT (UPDATED) ---
+                    if(stopBtn) stopBtn.style.display = 'inline-block'; // Show Stop
+
+                    showSuccess(`Case #${activeCaseId} Started. Redirecting to History...`);
+                    
+                    // --- REDIRECT LOGIC ---
+                    console.log("Redirecting to history.html in 1.5 seconds...");
                     setTimeout(() => {
-                        window.location.href = `report.html?id=${response.case_id}`;
+                        window.location.replace("history.html");
                     }, 1500);
 
                 } catch (e) {
+                    console.error("JSON Parse Error:", e);
                     handleError("Invalid server response.");
                 }
             } else {
-                handleError("Upload Failed.");
+                console.error("Server Error:", xhr.responseText);
+                handleError("Upload Failed. Check console.");
             }
         };
 
         xhr.onerror = function() {
-            handleError("Network Error.");
+            console.error("Network Error");
+            handleError("Network Connection Error.");
         };
 
         function handleError(msg) {
             progressBar.style.backgroundColor = "#ff7b72";
             startBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Retry';
+            startBtn.style.display = 'inline-block';
+            if(stopBtn) stopBtn.style.display = 'none';
             startBtn.disabled = false;
             showError(msg);
         }
@@ -155,6 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         xhr.send(formData);
     });
 
+    // Helpers
     function showError(msg) {
         const el = document.getElementById('upload-error');
         if (el) { el.textContent = msg; el.style.display = 'block'; }

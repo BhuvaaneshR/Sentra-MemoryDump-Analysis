@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const BACKEND_URL = "http://127.0.0.1:5000";
     const user = JSON.parse(localStorage.getItem("sentra_user") || "{}");
 
-    // Auth Check
     if (!user.email) {
         window.location.href = "signin.html";
         return;
@@ -14,19 +13,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const refreshBtn = document.getElementById('refresh-btn');
     const searchInput = document.getElementById('search-input');
 
-    // 1. Load Data on Init
+    // Load Data
     loadCases();
 
-    // 2. Event Listeners
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
-            // Add spin animation to icon for visual feedback
             const icon = refreshBtn.querySelector('i');
             if(icon) icon.classList.add('fa-spin');
-            
-            loadCases().then(() => {
-                if(icon) icon.classList.remove('fa-spin');
-            });
+            loadCases().then(() => { if(icon) icon.classList.remove('fa-spin'); });
         });
     }
     
@@ -34,7 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
         searchInput.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const rows = tableBody.querySelectorAll('tr');
-            
             rows.forEach(row => {
                 const text = row.innerText.toLowerCase();
                 row.style.display = text.includes(term) ? '' : 'none';
@@ -60,16 +53,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             console.error(err);
-            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#ff7b72;">Connection Error to Backend</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#ff7b72;">Connection Error</td></tr>`;
         }
     }
 
     function renderTable(cases) {
         if (cases.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:#8b949e;">
-                <i class="fa-solid fa-folder-open" style="font-size: 2rem; margin-bottom: 10px; display:block;"></i>
-                No cases found. Start a new investigation.
-            </td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:#8b949e;">No cases found.</td></tr>`;
             return;
         }
 
@@ -77,42 +67,36 @@ document.addEventListener('DOMContentLoaded', () => {
             let statusBadge = '';
             let actionBtn = '';
             
-            // Status Logic
+            // --- STATUS LOGIC ---
             if (c.status === 'completed') {
                 statusBadge = `<span class="badge clean" style="background:rgba(0,255,136,0.1); color:#00ff88; border:1px solid rgba(0,255,136,0.2);">Completed</span>`;
-                actionBtn = `<button class="icon-btn" onclick="viewReport(${c.case_id})" title="View Forensic Report">
-                                <i class="fa-solid fa-file-contract" style="color:#00ff88;"></i>
+                actionBtn = `<button class="icon-btn" onclick="viewReport(${c.case_id})" title="View Report"><i class="fa-solid fa-file-contract" style="color:#00ff88;"></i></button>`;
+            } 
+            else if (c.status === 'processing') {
+                statusBadge = `<span class="badge" style="background:rgba(255,200,0,0.1); color:#ffdd00; border:1px solid rgba(255,200,0,0.2);"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing</span>`;
+                
+                // NEW: STOP BUTTON instead of disabled hourglass
+                actionBtn = `<button class="icon-btn" onclick="stopCase(${c.case_id})" title="Stop Analysis" style="color:#ff7b72; border:1px solid #ff7b72;">
+                                <i class="fa-solid fa-stop"></i>
                              </button>`;
-            } else if (c.status === 'processing') {
-                statusBadge = `<span class="badge" style="background:rgba(255,200,0,0.1); color:#ffdd00; border:1px solid rgba(255,200,0,0.2);">
-                                <i class="fa-solid fa-circle-notch fa-spin"></i> Processing
-                               </span>`;
-                // Disable report button while processing
-                actionBtn = `<button class="icon-btn" disabled style="opacity:0.5; cursor:wait;"><i class="fa-solid fa-hourglass"></i></button>`;
-            } else if (c.status === 'failed') {
-                statusBadge = `<span class="badge danger" style="background:rgba(255, 123, 114, 0.1); color:#ff7b72; border:1px solid rgba(255, 123, 114, 0.2);">Failed</span>`;
-                actionBtn = `<button class="icon-btn" onclick="viewReport(${c.case_id})" title="View Error Log">
-                                <i class="fa-solid fa-triangle-exclamation" style="color:#ff7b72;"></i>
-                             </button>`;
-            } else {
+            } 
+            else if (c.status === 'failed' || c.status === 'cancelled') {
+                statusBadge = `<span class="badge danger" style="background:rgba(255, 123, 114, 0.1); color:#ff7b72; border:1px solid rgba(255, 123, 114, 0.2);">${c.status.toUpperCase()}</span>`;
+                actionBtn = `<button class="icon-btn" onclick="viewReport(${c.case_id})" title="View Log"><i class="fa-solid fa-triangle-exclamation" style="color:#ff7b72;"></i></button>`;
+            } 
+            else {
                 statusBadge = `<span class="badge">Queued</span>`;
                 actionBtn = `<button class="icon-btn" disabled><i class="fa-solid fa-clock"></i></button>`;
             }
 
-            // Risk Score Logic
-            let scoreDisplay = 'N/A';
-            let scoreColor = '#c9d1d9'; // Default Grey
+            // Score Logic
+            let scoreDisplay = (c.status === 'completed') ? (c.risk_score + '/100') : 'N/A';
+            let scoreColor = '#c9d1d9';
+            if (c.risk_score > 70) scoreColor = '#ff7b72'; 
+            else if (c.risk_score > 30) scoreColor = '#d29922'; 
+            else if (c.status === 'completed') scoreColor = '#00ff88';
 
-            if (c.risk_score !== null && c.status === 'completed') {
-                scoreDisplay = c.risk_score + '/100';
-                if (c.risk_score > 70) scoreColor = '#ff7b72'; // Red (High Risk)
-                else if (c.risk_score > 30) scoreColor = '#d29922'; // Orange (Med Risk)
-                else scoreColor = '#00ff88'; // Green (Low Risk)
-            }
-
-            // Mode Logic
-            const mode = c.analysis_mode ? c.analysis_mode : 'standard';
-            const modeLabel = mode.toUpperCase();
+            const mode = c.analysis_mode ? c.analysis_mode.toUpperCase() : 'STD';
 
             return `
                 <tr>
@@ -121,8 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td style="color:#8b949e; font-size:0.85rem;">${c.date}</td>
                     <td style="color:#8b949e; font-size:0.85rem;">${c.size}</td>
                     <td>${statusBadge}</td>
-                    <td><span class="mode-badge ${mode}">${modeLabel}</span></td>
-                    <td style="color:${scoreColor}; font-weight:bold; font-family:monospace;">${scoreDisplay}</td>
+                    <td><span class="mode-badge ${c.analysis_mode}">${mode}</span></td>
+                    <td style="color:${scoreColor}; font-weight:bold;">${scoreDisplay}</td>
                     <td>${actionBtn}</td>
                 </tr>
             `;
@@ -130,7 +114,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global Function for HTML onclick access
+// --- GLOBAL FUNCTIONS (Accessible by HTML) ---
+
 function viewReport(caseId) {
     window.location.href = `report.html?id=${caseId}`;
+}
+
+// NEW FUNCTION: Handles the API call to stop analysis
+async function stopCase(caseId) {
+    if(!confirm(`Are you sure you want to stop analysis for Case #${caseId}?`)) return;
+
+    try {
+        const BACKEND_URL = "http://127.0.0.1:5000";
+        const res = await fetch(`${BACKEND_URL}/api/stop-analysis/${caseId}`, { method: 'POST' });
+        
+        if(res.ok) {
+            alert("Analysis Stopped.");
+            location.reload(); // Refresh list to show "Cancelled"
+        } else {
+            alert("Failed to stop. It might have already finished.");
+            location.reload();
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Connection Error.");
+    }
 }
