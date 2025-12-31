@@ -729,3 +729,98 @@ th { background: var(--bg-color); color: var(--text-muted); font-weight: 600; }
     background: #ff7b72;
     color: white;
 }
+/* --- PRINT STYLING (Add to bottom of style.css) --- */
+
+/* 1. Default: Hide print header on screen */
+.print-only {
+    display: none;
+}
+
+/* 2. PRINT MEDIA QUERY */
+@media print {
+    /* HIDE UI ELEMENTS */
+    .sidebar, 
+    .top-bar, 
+    .btn-primary, 
+    .btn-secondary, 
+    .icon-btn, 
+    .no-print,
+    .modal {
+        display: none !important;
+    }
+
+    /* RESET LAYOUT */
+    body, .dashboard-container, .main-content {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        background-color: white !important;
+        color: black !important;
+        display: block !important;
+        overflow: visible !important;
+    }
+
+    /* SHOW PRINT HEADER */
+    .print-only {
+        display: block !important;
+        margin-bottom: 20px;
+        text-align: center;
+    }
+    .print-logo h2 {
+        font-size: 2rem;
+        margin: 0;
+        color: #000;
+        letter-spacing: 4px;
+    }
+    .print-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.9rem;
+        color: #555;
+        margin-top: 10px;
+    }
+
+    /* TABLE STYLING FOR PRINT */
+    .table-container {
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+    }
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 10pt !important;
+    }
+    th, td {
+        border: 1px solid #ddd !important;
+        padding: 8px !important;
+        color: #000 !important;
+    }
+    th {
+        background-color: #f0f0f0 !important;
+        font-weight: bold !important;
+    }
+    
+    /* REMOVE BADGE BACKGROUNDS FOR CLEANER PRINT */
+    .badge {
+        background: none !important;
+        border: 1px solid #000 !important;
+        color: #000 !important;
+        padding: 2px 5px !important;
+    }
+
+    /* WATERMARK */
+    body::after {
+        content: "SENTRA - CONFIDENTIAL";
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 6rem;
+        font-weight: bold;
+        color: rgba(0, 0, 0, 0.08) !important; /* Very faint grey */
+        z-index: -1;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+}

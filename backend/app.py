@@ -47,7 +47,7 @@ ALLOWED_DUMP_EXTENSIONS = {'raw', 'mem', 'vmem', 'img'}
 
 # --- VOLATILITY CONFIGURATION ---
 PYTHON_EXEC = "python"
-# Path to Volatility 3
+# Path to Volatility 3 (Use raw string for Windows path safety)
 VOL_PATH = os.path.join(os.getcwd(), "volatility3", "vol.py") 
 
 # Create directories
@@ -566,7 +566,7 @@ def dashboard_stats():
         cur.close()
         conn.close()
 
-# --- GET REPORT ---
+# --- GET REPORT (FIXED TIME FORMAT) ---
 @app.route('/api/case-report/<int:case_id>', methods=['GET'])
 def get_case_report(case_id):
     conn = get_db_connection()
@@ -579,7 +579,7 @@ def get_case_report(case_id):
             "status": "success",
             "data": {
                 "file_name": case[0],
-                "date": case[1],
+                "date": case[1].strftime("%Y-%m-%d %H:%M:%S"), # Formatted string
                 "status": case[2],
                 "risk_score": case[3],
                 "report_content": case[4],
@@ -605,5 +605,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (Delete + Stats Added)")
+    print("🛡️ Sentra Backend Active on Port 5000 (Time Fix Applied)")
     app.run(debug=True, port=5000)

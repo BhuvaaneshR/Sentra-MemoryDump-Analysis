@@ -4,17 +4,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const BACKEND_URL = "http://127.0.0.1:5000";
     const user = JSON.parse(localStorage.getItem("sentra_user") || "{}");
 
-    // 1. Auth Check
     if (!user.email) {
         window.location.href = "signin.html";
         return;
     }
 
-    // 2. Element Selection
+    // Elements
     const tableBody = document.getElementById('history-body');
     const refreshBtn = document.getElementById('refresh-btn');
     const searchInput = document.getElementById('search-input');
-    
+    const printBtn = document.getElementById('print-btn'); // NEW ELEMENT
+
     // Delete Modal Elements
     const deleteModal = document.getElementById('delete-modal');
     const deleteOtpInput = document.getElementById('delete-otp-input');
@@ -23,15 +23,31 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let caseIdToDelete = null;
 
-    // 3. Load Data
+    // Load Data
     loadCases();
 
-    // 4. Event Listeners
+    // --- EVENT LISTENERS ---
+
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             const icon = refreshBtn.querySelector('i');
             if(icon) icon.classList.add('fa-spin');
             loadCases().then(() => { if(icon) icon.classList.remove('fa-spin'); });
+        });
+    }
+
+    // NEW: PRINT HANDLER
+    if (printBtn) {
+        printBtn.addEventListener('click', () => {
+            // Populate hidden print header fields
+            const dateEl = document.getElementById('print-date');
+            const analystEl = document.getElementById('print-analyst');
+            
+            if (dateEl) dateEl.textContent = new Date().toLocaleString();
+            if (analystEl) analystEl.textContent = user.name || user.email;
+            
+            // Trigger Browser Print
+            window.print();
         });
     }
     
@@ -185,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${statusBadge}</td>
                     <td><span class="mode-badge ${c.analysis_mode}">${mode}</span></td>
                     <td style="color:${scoreColor}; font-weight:bold; font-family:monospace;">${scoreDisplay}</td>
-                    <td style="display:flex; align-items:center;">
+                    <td class="no-print" style="display:flex; align-items:center;">
                         ${actionBtn}
                         ${deleteBtn}
                     </td>

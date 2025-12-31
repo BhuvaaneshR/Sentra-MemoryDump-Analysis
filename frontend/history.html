@@ -7,6 +7,18 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <div id="print-header" class="print-only">
+        <div class="print-logo">
+            <h2>SENTRA</h2>
+            <span>Memory Forensics Report</span>
+        </div>
+        <div class="print-meta">
+            <p>Generated: <span id="print-date"></span></p>
+            <p>Analyst: <span id="print-analyst"></span></p>
+        </div>
+        <hr>
+    </div>
+
     <div class="dashboard-container">
         <aside class="sidebar">
             <div class="logo-area"><h2>SENTRA</h2><span class="version">v1.0.0</span></div>
@@ -27,9 +39,13 @@
             <header class="top-bar">
                 <h1>Case History</h1>
                 <div class="filter-bar">
-                    <input type="text" id="search-input" placeholder="Search Case ID or Filename..." class="search-input">
+                    <input type="text" id="search-input" placeholder="Search Case ID..." class="search-input">
                     
-                    <button class="btn-primary" id="refresh-btn" style="width: auto; padding: 8px 15px; margin-left: 10px;">
+                    <button class="btn-secondary" id="print-btn" title="Print Report">
+                        <i class="fa-solid fa-print"></i> Print
+                    </button>
+
+                    <button class="btn-primary" id="refresh-btn">
                         <i class="fa-solid fa-rotate-right"></i> Refresh
                     </button>
                 </div>
@@ -46,15 +62,10 @@
                             <th>Status</th>
                             <th>Mode</th>
                             <th>Threat Score</th>
-                            <th>Actions</th>
-                        </tr>
+                            <th class="no-print">Actions</th> </tr>
                     </thead>
                     <tbody id="history-body">
-                        <tr>
-                            <td colspan="8" style="text-align: center; padding: 20px; color: #8b949e;">
-                                Loading cases...
-                            </td>
-                        </tr>
+                        <tr><td colspan="8" style="text-align: center; padding: 20px;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -65,19 +76,14 @@
         <div class="modal-content">
             <i class="fa-solid fa-triangle-exclamation" style="font-size: 3rem; color: #ff7b72; margin-bottom: 20px;"></i>
             <h3>Confirm Deletion</h3>
-            <p style="color: #8b949e; margin-bottom: 20px; line-height: 1.5;">
-                This action is <strong>irreversible</strong>.<br>
-                For security, a verification code has been sent to your email.
-            </p>
-            
+            <p style="color: #8b949e; margin-bottom: 20px;">Verification code sent to email.</p>
             <div class="form-group" style="display: flex; justify-content: center; margin-bottom: 20px;">
-                <input type="text" id="delete-otp-input" placeholder="Enter 6-digit Code" maxlength="6" 
-                       style="text-align: center; letter-spacing: 4px; font-size: 1.2rem; width: 220px; padding: 10px; background: #0d1117; border: 1px solid #30363d; color: white; border-radius: 6px;">
+                <input type="text" id="delete-otp-input" placeholder="6-digit Code" maxlength="6" 
+                       style="text-align: center; letter-spacing: 4px; padding: 10px; border-radius: 6px;">
             </div>
-            
             <div class="modal-actions">
-                <button id="cancel-delete-btn" class="btn-secondary" style="border: 1px solid #30363d; background: transparent; color: #c9d1d9;">Cancel</button>
-                <button id="confirm-delete-btn" class="btn-danger">Delete Permanently</button>
+                <button id="cancel-delete-btn" class="btn-secondary">Cancel</button>
+                <button id="confirm-delete-btn" class="btn-danger">Delete</button>
             </div>
         </div>
     </div>
