@@ -736,91 +736,86 @@ th { background: var(--bg-color); color: var(--text-muted); font-weight: 600; }
     display: none;
 }
 
-/* 2. PRINT MEDIA QUERY */
+/* --- PRINT STYLING --- */
+.print-only { display: none; }
+
 @media print {
-    /* HIDE UI ELEMENTS */
-    .sidebar, 
-    .top-bar, 
-    .btn-primary, 
-    .btn-secondary, 
-    .icon-btn, 
-    .no-print,
-    .modal {
+    @page { margin: 15mm; size: A4; }
+
+    /* 1. HIDE UI */
+    .sidebar, .top-bar, .btn-primary, .btn-secondary, .icon-btn, .no-print, .modal, .breadcrumb {
         display: none !important;
     }
 
-    /* RESET LAYOUT */
+    /* 2. RESET LAYOUT */
     body, .dashboard-container, .main-content {
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
-        height: auto !important;
-        background-color: white !important;
+        background-color: transparent !important; /* Allow watermark to show through */
         color: black !important;
         display: block !important;
         overflow: visible !important;
     }
 
-    /* SHOW PRINT HEADER */
-    .print-only {
-        display: block !important;
-        margin-bottom: 20px;
-        text-align: center;
-    }
-    .print-logo h2 {
-        font-size: 2rem;
-        margin: 0;
-        color: #000;
-        letter-spacing: 4px;
-    }
-    .print-meta {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.9rem;
-        color: #555;
-        margin-top: 10px;
-    }
-
-    /* TABLE STYLING FOR PRINT */
-    .table-container {
-        box-shadow: none !important;
-        border: 1px solid #ddd !important;
-    }
-    table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        font-size: 10pt !important;
-    }
-    th, td {
-        border: 1px solid #ddd !important;
-        padding: 8px !important;
-        color: #000 !important;
-    }
-    th {
-        background-color: #f0f0f0 !important;
-        font-weight: bold !important;
+    /* 3. WATERMARK (OVERLAY STRATEGY) */
+    .watermark-container {
+        display: flex !important;
+        position: fixed;
+        top: 0; 
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999; /* Sit ON TOP of everything */
+        pointer-events: none; /* Let text be selectable underneath */
+        opacity: 0.15; /* Make it transparent */
     }
     
-    /* REMOVE BADGE BACKGROUNDS FOR CLEANER PRINT */
-    .badge {
-        background: none !important;
-        border: 1px solid #000 !important;
-        color: #000 !important;
-        padding: 2px 5px !important;
+    .watermark-text {
+        font-size: 6rem;
+        font-weight: 900;
+        color: #000; /* Black color, but reduced by opacity */
+        text-transform: uppercase;
+        transform: rotate(-45deg);
+        white-space: nowrap;
     }
 
-    /* WATERMARK */
-    body::after {
-        content: "SENTRA - CONFIDENTIAL";
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) rotate(-45deg);
-        font-size: 6rem;
+    /* 4. FORCE TABLE DISPLAY */
+    #threat-summary-section {
+        display: block !important;
+        border: 2px solid #000 !important;
+        margin-bottom: 20px !important;
+        page-break-inside: avoid;
+    }
+
+    /* 5. BLACK & WHITE OPTIMIZATION */
+    .report-card, .score-container {
+        border: none !important;
+        box-shadow: none !important;
+        color: black !important;
+        background: transparent !important;
+    }
+
+    /* Table borders for print */
+    table, th, td {
+        border: 1px solid #000 !important;
+        border-collapse: collapse !important;
+        color: black !important;
+    }
+    
+    /* Ensure table text is black */
+    td span {
+        color: black !important;
+        border: 1px solid black !important;
         font-weight: bold;
-        color: rgba(0, 0, 0, 0.08) !important; /* Very faint grey */
-        z-index: -1;
-        white-space: nowrap;
-        pointer-events: none;
+    }
+
+    pre {
+        white-space: pre-wrap !important; 
+        font-size: 9pt !important;
+        color: #000 !important;
+        border: none !important;
     }
 }

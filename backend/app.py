@@ -3,6 +3,7 @@ import os
 import threading
 import subprocess
 import json
+import re  # Required for parsing PIDs
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -47,7 +48,7 @@ ALLOWED_DUMP_EXTENSIONS = {'raw', 'mem', 'vmem', 'img'}
 
 # --- VOLATILITY CONFIGURATION ---
 PYTHON_EXEC = "python"
-# Path to Volatility 3 (Use raw string for Windows path safety)
+# Path to Volatility 3
 VOL_PATH = os.path.join(os.getcwd(), "volatility3", "vol.py") 
 
 # Create directories
@@ -71,8 +72,6 @@ def get_db_connection():
 def send_email_otp(to_email, otp, user_name="User", action="Verification"):
     try:
         msg = EmailMessage()
-        
-        # Personalized Content
         content = f"""Dear {user_name},
 
 Your Sentra Verification Code for {action} is {otp}
@@ -144,7 +143,11 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
         
         full_report_text = f"ANALYSIS TYPE: {analysis_type.upper()}\n" + "="*50 + "\n"
         risk_score = 0
-        findings = []
+        
+        # Structured findings for JSON Table
+        structured_findings = []
+        # Simple string findings for text summary
+        text_findings = []
 
         # 2. Execute Plugin Chain
         for plugin in selected_plugins:
@@ -158,7 +161,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
             command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
             timeout_limit = 600 if analysis_type == 'quick' else 1800
             
-            # --- CRITICAL FIX: FORCE UTF-8 ENCODING ---
+            # FORCE UTF-8 ENCODING
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
 
@@ -168,9 +171,9 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE, 
                 text=True,
-                encoding='utf-8',    # Force UTF-8 for reading output
-                errors='replace',    # Replace invalid chars instead of crashing
-                env=env              # Pass env var to child process
+                encoding='utf-8',
+                errors='replace',
+                env=env
             )
             
             if case_id in active_scans:
@@ -190,42 +193,77 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
             if process.returncode == 0:
                 full_report_text += f"\n\n=== [ {plugin['desc']} ] ===\n{stdout}"
                 
-                # --- AGGRESSIVE SCORING LOGIC ---
+                # --- THREAT EXTRACTION LOGIC ---
+                
+                # A. Malfind Logic (Injection)
                 if plugin['name'] == 'windows.malfind':
-                    if "PAGE_EXECUTE_READWRITE" in stdout:
-                        if "Detected Memory Injection (RWX)" not in findings:
-                            risk_score += 60
-                            findings.append("CRITICAL: Detected Memory Injection (RWX Permissions)")
-                    if "VadS" in stdout and "MZ" not in stdout:
-                        if "Potential Raw Shellcode" not in findings:
-                            risk_score += 30
-                            findings.append("Potential Raw Shellcode Detected")
-                    if "MZ" in stdout and "VadTag" in stdout:
-                        if "Hidden Executable" not in findings:
-                            risk_score += 40
-                            findings.append("CRITICAL: Detected Hidden Executable (Reflective DLL)")
+                    # Parse PID/Name
+                    matches = re.findall(r"Process:\s+([^\s]+)\s+Pid:\s+(\d+)", stdout)
+                    
+                    for proc_name, pid in matches:
+                        # RWX Check
+                        if "PAGE_EXECUTE_READWRITE" in stdout:
+                            issue = "Memory Injection (RWX Permissions)"
+                            if f"{pid}_{issue}" not in [f"{x['pid']}_{x['issue']}" for x in structured_findings]:
+                                structured_findings.append({
+                                    "process": proc_name, "pid": pid, "issue": issue, 
+                                    "severity": "CRITICAL", "action": "KILL PROCESS"
+                                })
+                                risk_score += 40
+                                text_findings.append(f"CRITICAL: {issue} in {proc_name} ({pid})")
 
+                        # Shellcode Check
+                        if "VadS" in stdout and "MZ" not in stdout:
+                            issue = "Potential Shellcode (No MZ Header)"
+                            if f"{pid}_{issue}" not in [f"{x['pid']}_{x['issue']}" for x in structured_findings]:
+                                structured_findings.append({
+                                    "process": proc_name, "pid": pid, "issue": issue, 
+                                    "severity": "HIGH", "action": "INSPECT & KILL"
+                                })
+                                risk_score += 20
+                                text_findings.append(f"HIGH: {issue} in {proc_name} ({pid})")
+
+                # B. Netscan Logic (C2)
                 if plugin['name'] == 'windows.netscan':
                     suspicious_ports = [':8808', ':4444', ':6667', ':31337', ':8080', ':1337']
                     for port in suspicious_ports:
-                        if port in stdout and f"Suspicious Port {port}" not in findings:
-                            risk_score += 30
-                            findings.append(f"Suspicious Network Port {port}")
-                    if "ESTABLISHED" in stdout: risk_score += 10
+                        if port in stdout:
+                            risk_score += 20
+                            text_findings.append(f"Suspicious Network Port {port}")
+                            structured_findings.append({
+                                "process": "Network", "pid": "N/A", 
+                                "issue": f"Suspicious C2 Port Active {port}", 
+                                "severity": "MEDIUM", "action": "CHECK FIREWALL"
+                            })
+                    if "ESTABLISHED" in stdout: risk_score += 5
 
+                # C. Ldrmodules Logic (Rootkits)
                 if plugin['name'] == 'windows.ldrmodules':
-                    if stdout.count("False") > 5: 
-                        risk_score += 40
-                        findings.append("Hidden/Unlinked DLLs detected (Rootkit behavior)")
+                    for line in stdout.splitlines():
+                        if "False" in line and "True" in line:
+                            parts = line.split()
+                            if len(parts) > 1 and parts[0].isdigit():
+                                pid = parts[0]
+                                proc_name = parts[1]
+                                issue = "Hidden Module (Unlinked from PEB)"
+                                if f"{pid}_{issue}" not in [f"{x['pid']}_{x['issue']}" for x in structured_findings]:
+                                    structured_findings.append({
+                                        "process": proc_name, "pid": pid, "issue": issue, 
+                                        "severity": "HIGH", "action": "DEEP SCAN"
+                                    })
+                                    risk_score += 25
+                                    text_findings.append(f"HIGH: {issue} in {proc_name} ({pid})")
+                                    break 
 
+                # D. Process List
                 if plugin['name'] == 'windows.pslist':
                     bad_procs = ['powershell.exe', 'cmd.exe', 'psexec.exe', 'vssadmin.exe', 'mimikatz.exe'] 
                     for proc in bad_procs:
                         if f" {proc} " in stdout:
                             risk_score += 15
-                            findings.append(f"Suspicious Admin Tool running: {proc}")
+                            text_findings.append(f"Suspicious Admin Tool running: {proc}")
+
             else:
-                # Log error but continue
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{stderr}"
 
         # --- FINALIZATION ---
@@ -237,13 +275,21 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
         if risk_score > 70: verdict = "INFECTED (CRITICAL)"
         elif risk_score > 30: verdict = "SUSPICIOUS"
         
+        # 1. Create JSON Block
+        unique_structured = {f"{f['pid']}_{f['issue']}": f for f in structured_findings}.values()
+        threat_data_json = json.dumps(list(unique_structured))
+
+        # 2. Text Summary
         summary = f"RISK VERDICT: {verdict}\nRISK SCORE: {risk_score}/100\n"
-        if findings:
-            summary += "THREATS FOUND:\n" + "\n".join([f"- {f}" for f in findings])
+        if text_findings:
+            unique_text = list(set(text_findings))
+            summary += "THREATS FOUND:\n" + "\n".join([f"- {f}" for f in unique_text])
         else:
             summary += "No obvious threats detected."
             
-        full_report_text = summary + "\n\n" + "="*50 + "\n" + full_report_text
+        # 3. Assemble Report (Inject JSON with delimiters)
+        full_report_text = f"{threat_data_json}\n" + \
+                           summary + "\n\n" + "="*60 + "\n" + full_report_text
 
         print(f"✅ [Case #{case_id}] Analysis Complete. Score: {risk_score}")
 
@@ -300,7 +346,8 @@ def signup():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
     record = otp_storage.get(data.get('email'))
-    if not record or record['otp'] != data.get('otp'): return jsonify({"error": "Invalid OTP"}), 400
+    if not record or record['otp'] != data.get('otp'): 
+        return jsonify({"error": "Invalid OTP"}), 400
     hashed_pw = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -524,7 +571,6 @@ def dashboard_stats():
     conn.close()
     return jsonify({"status": "success", "total_cases": count}), 200
 
-# --- REPORT & STATUS ---
 @app.route('/api/case-report/<int:case_id>', methods=['GET'])
 def get_case_report(case_id):
     conn = get_db_connection()
@@ -532,7 +578,38 @@ def get_case_report(case_id):
     cur.execute("SELECT file_name, upload_date, status, risk_score, analysis_result, analysis_mode FROM cases WHERE case_id = %s", (case_id,))
     case = cur.fetchone()
     conn.close()
+
     if case:
+        raw_report = case[4] if case[4] else ""
+        threats_data = []
+        clean_report = raw_report
+
+        # --- ROBUST JSON EXTRACTION ---
+        # 1. Try standard delimiters first
+        if "" in raw_report:
+            try:
+                parts = raw_report.split("", 1)
+                if len(parts) > 1:
+                    json_part, rest = parts[1].split("", 1)
+                    threats_data = json.loads(json_part)
+                    clean_report = parts[0] + rest.strip()
+            except Exception as e:
+                print(f"Delimiter parse failed: {e}")
+
+        # 2. Fallback: Regex Search for JSON Array at start of string
+        # Looks for [ { ... } ] pattern ignoring whitespace
+        if not threats_data:
+            try:
+                # Regex to find a JSON list of objects at the very start
+                match = re.search(r'^\s*(\[\s*\{.*?\}\s*\])', raw_report, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                    threats_data = json.loads(json_str)
+                    # Remove the JSON string from the display text
+                    clean_report = raw_report.replace(json_str, "").strip()
+            except Exception as e:
+                print(f"Regex parse failed: {e}")
+
         return jsonify({
             "status": "success",
             "data": {
@@ -540,7 +617,8 @@ def get_case_report(case_id):
                 "date": case[1].strftime("%Y-%m-%d %H:%M:%S"),
                 "status": case[2],
                 "risk_score": case[3],
-                "report_content": case[4],
+                "report_content": clean_report, 
+                "threats": threats_data,       
                 "analysis_mode": case[5]
             }
         }), 200
@@ -561,5 +639,5 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (UTF-8 Fix Applied)")
+    print("🛡️ Sentra Backend Active on Port 5000 (Threat Parsing + UTF8 Fix)")
     app.run(debug=True, port=5000)
