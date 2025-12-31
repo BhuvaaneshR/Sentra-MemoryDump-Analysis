@@ -158,12 +158,19 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
             command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
             timeout_limit = 600 if analysis_type == 'quick' else 1800
             
+            # --- CRITICAL FIX: FORCE UTF-8 ENCODING ---
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+
             # Start Process
             process = subprocess.Popen(
                 command, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE, 
-                text=True
+                text=True,
+                encoding='utf-8',    # Force UTF-8 for reading output
+                errors='replace',    # Replace invalid chars instead of crashing
+                env=env              # Pass env var to child process
             )
             
             if case_id in active_scans:
@@ -218,6 +225,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
                             risk_score += 15
                             findings.append(f"Suspicious Admin Tool running: {proc}")
             else:
+                # Log error but continue
                 full_report_text += f"\n\n=== [ {plugin['name']} FAILED ] ===\n{stderr}"
 
         # --- FINALIZATION ---
@@ -235,7 +243,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type='standard'):
         else:
             summary += "No obvious threats detected."
             
-        full_report_text = summary + "\n\n" + "="*50 + full_report_text
+        full_report_text = summary + "\n\n" + "="*50 + "\n" + full_report_text
 
         print(f"✅ [Case #{case_id}] Analysis Complete. Score: {risk_score}")
 
@@ -267,34 +275,24 @@ def send_otp():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
     email = data.get('email')
-    
-    # Check type: 'login', 'signup', or 'delete'
     req_type = data.get('type', 'signup') 
     full_name = "User"
 
-    # For Login/Delete, fetch name from DB
     if req_type in ['login', 'delete']:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT full_name FROM users WHERE email = %s", (email,))
         row = cur.fetchone()
         conn.close()
-        if not row:
-            return jsonify({"error": "Email not registered"}), 404
+        if not row: return jsonify({"error": "Email not registered"}), 404
         full_name = row[0]
-    
-    # For Signup, use provided name
     elif req_type == 'signup':
         full_name = data.get('fullname', 'User')
 
     otp = str(random.randint(100000, 999999))
     otp_storage[email] = {"otp": otp, "expires_at": time.time() + 300}
-    
-    # Determine Action Label
     action_label = "Deletion Authorization" if req_type == 'delete' else req_type.capitalize()
-    
     send_email_otp(email, otp, full_name, action_label)
-    
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/signup', methods=['POST', 'OPTIONS'])
@@ -302,8 +300,7 @@ def signup():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
     record = otp_storage.get(data.get('email'))
-    if not record or record['otp'] != data.get('otp'): 
-        return jsonify({"error": "Invalid OTP"}), 400
+    if not record or record['otp'] != data.get('otp'): return jsonify({"error": "Invalid OTP"}), 400
     hashed_pw = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     conn = get_db_connection()
     cur = conn.cursor()
@@ -324,7 +321,6 @@ def login():
     password = data.get('password')
     otp = data.get('otp')
 
-    # Verify OTP
     record = otp_storage.get(email)
     if not record or record['otp'] != otp: return jsonify({"error": "Invalid or Expired OTP"}), 400
     if time.time() > record['expires_at']:
@@ -458,14 +454,11 @@ def upload_dump():
 def stop_analysis(case_id):
     if request.method == 'OPTIONS': return jsonify({}), 200
     print(f"🛑 Stop Request received for Case #{case_id}")
-    
     if case_id in active_scans:
         active_scans[case_id]['stopped'] = True
         proc = active_scans[case_id]['process']
         if proc and proc.poll() is None:
             proc.terminate()
-            print(f"   - Terminated subprocess for Case #{case_id}")
-
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("UPDATE cases SET status = 'cancelled', analysis_result = 'Analysis stopped by user.' WHERE case_id = %s", (case_id,))
@@ -473,10 +466,9 @@ def stop_analysis(case_id):
         cur.close()
         conn.close()
         return jsonify({"status": "success", "message": "Analysis stopped"}), 200
-    
     return jsonify({"error": "Analysis not active"}), 400
 
-# --- NEW: DELETE CASE (SECURE DELETION) ---
+# --- DELETE CASE ---
 @app.route('/api/delete-case', methods=['POST', 'OPTIONS'])
 def delete_case():
     if request.method == 'OPTIONS': return jsonify({}), 200
@@ -485,36 +477,27 @@ def delete_case():
     case_id = data.get('case_id')
     otp = data.get('otp')
 
-    # 1. Verify OTP
     record = otp_storage.get(email)
-    if not record or record['otp'] != otp:
-        return jsonify({"error": "Invalid or Expired OTP"}), 400
+    if not record or record['otp'] != otp: return jsonify({"error": "Invalid or Expired OTP"}), 400
     
-    # 2. Perform Delete
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Get filename to delete from disk
         cur.execute("DELETE FROM cases WHERE case_id = %s AND user_email = %s RETURNING file_stored_name", (case_id, email))
         row = cur.fetchone()
-        
         if row:
-            # Delete physical file
             file_path = os.path.join(app.config['DUMP_FOLDER'], row[0])
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except: pass # Ignore lock errors
-            
+            if os.path.exists(file_path): 
+                try: os.remove(file_path)
+                except: pass
             conn.commit()
-            del otp_storage[email] # Clear OTP
+            del otp_storage[email]
             return jsonify({"status": "success"}), 200
-        else:
-            return jsonify({"error": "Case not found or unauthorized"}), 404
+        else: return jsonify({"error": "Case not found"}), 404
     except Exception as e: return jsonify({"error": str(e)}), 500
     finally: conn.close()
 
-# --- HISTORY: GET CASES ---
+# --- HISTORY & STATS ---
 @app.route('/api/cases', methods=['POST', 'OPTIONS'])
 def get_user_cases():
     if request.method == 'OPTIONS': return jsonify({}), 200
@@ -523,50 +506,25 @@ def get_user_cases():
     if not conn: return jsonify({"error": "DB Error"}), 500
     try:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT case_id, file_name, upload_date, file_size, status, risk_score, analysis_mode 
-            FROM cases 
-            WHERE user_email = %s 
-            ORDER BY upload_date DESC
-        """, (data.get('email'),))
+        cur.execute("SELECT case_id, file_name, upload_date, file_size, status, risk_score, analysis_mode FROM cases WHERE user_email = %s ORDER BY upload_date DESC", (data.get('email'),))
         rows = cur.fetchall()
-        cases = []
-        for row in rows:
-            cases.append({
-                "case_id": row[0],
-                "file_name": row[1],
-                "date": row[2].strftime("%Y-%m-%d %H:%M:%S"),
-                "size": row[3],
-                "status": row[4],
-                "risk_score": row[5],
-                "analysis_mode": row[6]
-            })
-        cur.close()
+        cases = [{"case_id": r[0], "file_name": r[1], "date": r[2].strftime("%Y-%m-%d %H:%M:%S"), "size": r[3], "status": r[4], "risk_score": r[5], "analysis_mode": r[6]} for r in rows]
         conn.close()
         return jsonify({"status": "success", "cases": cases}), 200
-    except Exception as e: return jsonify({"error": str(e)}), 500
+    except: return jsonify({"error": "Failed to fetch cases"}), 500
 
-# --- NEW: DASHBOARD STATS ---
 @app.route('/api/dashboard-stats', methods=['POST', 'OPTIONS'])
 def dashboard_stats():
     if request.method == 'OPTIONS': return jsonify({}), 200
     data = request.json
-    email = data.get('email')
-    
     conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB connection failed"}), 500
-    
     cur = conn.cursor()
-    try:
-        cur.execute("SELECT COUNT(*) FROM cases WHERE user_email = %s", (email,))
-        count = cur.fetchone()[0]
-        return jsonify({"status": "success", "total_cases": count}), 200
-    except Exception as e: return jsonify({"error": str(e)}), 500
-    finally: 
-        cur.close()
-        conn.close()
+    cur.execute("SELECT COUNT(*) FROM cases WHERE user_email = %s", (data.get('email'),))
+    count = cur.fetchone()[0]
+    conn.close()
+    return jsonify({"status": "success", "total_cases": count}), 200
 
-# --- GET REPORT (FIXED TIME FORMAT) ---
+# --- REPORT & STATUS ---
 @app.route('/api/case-report/<int:case_id>', methods=['GET'])
 def get_case_report(case_id):
     conn = get_db_connection()
@@ -579,7 +537,7 @@ def get_case_report(case_id):
             "status": "success",
             "data": {
                 "file_name": case[0],
-                "date": case[1].strftime("%Y-%m-%d %H:%M:%S"), # Formatted string
+                "date": case[1].strftime("%Y-%m-%d %H:%M:%S"),
                 "status": case[2],
                 "risk_score": case[3],
                 "report_content": case[4],
@@ -588,7 +546,6 @@ def get_case_report(case_id):
         }), 200
     return jsonify({"error": "Case not found"}), 404
 
-# --- STATUS CHECK ---
 @app.route('/api/case-status/<int:case_id>', methods=['GET'])
 def check_status(case_id):
     conn = get_db_connection()
@@ -599,11 +556,10 @@ def check_status(case_id):
     if row: return jsonify({"status": row[0], "risk": row[1]}), 200
     return jsonify({"error": "Not found"}), 404
 
-# --- STATIC ---
 @app.route('/static/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
-    print("🛡️ Sentra Backend Active on Port 5000 (Time Fix Applied)")
+    print("🛡️ Sentra Backend Active on Port 5000 (UTF-8 Fix Applied)")
     app.run(debug=True, port=5000)
