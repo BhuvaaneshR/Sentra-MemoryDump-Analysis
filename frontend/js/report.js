@@ -19,24 +19,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. UI Elements
-    const elFilename = document.getElementById('r-filename');
-    const elDate = document.getElementById('r-date');
-    const elId = document.getElementById('r-id');
-    const elMode = document.getElementById('r-mode');
-    const elLog = document.getElementById('analysis-log');
-    
-    // Threat Table Elements
-    const threatSection = document.getElementById('threat-summary-section');
-    const threatBody = document.getElementById('threat-table-body');
-    const printBtn = document.getElementById('print-report-btn');
+    const elements = {
+        filename: document.getElementById('r-filename'),
+        date: document.getElementById('r-date'),
+        id: document.getElementById('r-id'),
+        mode: document.getElementById('r-mode'),
+        log: document.getElementById('analysis-log'),
+        scoreText: document.getElementById('score-text'),
+        verdictText: document.getElementById('verdict-text'),
+        threatSection: document.getElementById('threat-summary-section'),
+        threatBody: document.getElementById('threat-table-body'),
+        printBtn: document.getElementById('print-report-btn')
+    };
 
     // 3. Load Data
     fetchReport();
 
     // 4. Print Handler
-    if (printBtn) {
-        printBtn.addEventListener('click', () => {
-            // Populate hidden print header fields
+    if (elements.printBtn) {
+        elements.printBtn.addEventListener('click', () => {
             const printAnalyst = document.getElementById('print-analyst');
             const printDate = document.getElementById('print-date');
             
@@ -47,6 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- CORE LOGIC ---
+
     async function fetchReport() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/case-report/${caseId}`);
@@ -56,64 +59,82 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = response.data;
                 
                 // A. Populate Header Info
-                if(elFilename) elFilename.textContent = data.file_name;
-                if(elDate) elDate.textContent = data.date; 
-                if(elId) elId.textContent = `#${caseId}`;
+                if(elements.filename) elements.filename.textContent = data.file_name;
+                if(elements.date) elements.date.textContent = data.date; 
+                if(elements.id) elements.id.textContent = `#${caseId}`;
                 
                 const mode = data.analysis_mode ? data.analysis_mode.toUpperCase() : 'STD';
-                if(elMode) elMode.textContent = mode;
+                if(elements.mode) elements.mode.textContent = mode;
                 
                 // B. Populate Score UI
                 updateScoreUI(data.risk_score, getVerdict(data.risk_score));
 
-                // C. RENDER THREAT TABLE
-                // Backend now handles the splitting/parsing. We just read the object.
-                if (data.threats && Array.isArray(data.threats) && data.threats.length > 0) {
-                    renderThreatTable(data.threats);
-                } else {
-                    // Hide section if no threats returned or if list is empty
-                    if(threatSection) threatSection.style.display = 'none';
-                }
+                // C. RENDER THREAT TABLE (Guaranteed Visibility)
+                // We pass the threats array (or empty array) to the renderer regardless of size
+                const threats = data.threats || [];
+                renderThreatTable(threats);
 
                 // D. Populate Logs
-                if(elLog) elLog.textContent = data.report_content || "No analysis logs available.";
+                if(elements.log) elements.log.textContent = data.report_content || "No analysis logs available.";
 
             } else {
-                if(elLog) elLog.textContent = "Error: " + response.error;
+                if(elements.log) elements.log.textContent = "Error: " + response.error;
             }
         } catch (err) {
             console.error(err);
-            if(elLog) elLog.textContent = "Failed to load report data. Please check connection.";
+            if(elements.log) elements.log.textContent = "Failed to load report data. Please check connection.";
         }
     }
 
     function renderThreatTable(threats) {
-        if (!threatSection || !threatBody) return;
+        if (!elements.threatSection || !elements.threatBody) return;
 
-        // Show the section
-        threatSection.style.display = 'block';
-        
-        // Build Rows
-        threatBody.innerHTML = threats.map(t => {
+        // ALWAYS show the section so the user knows the check was performed
+        elements.threatSection.style.display = 'block';
+        elements.threatBody.innerHTML = '';
+
+        // 1. Handle Clean State
+        if (threats.length === 0) {
+            elements.threatBody.innerHTML = `
+                <tr style="border-bottom: 1px solid #30363d;">
+                    <td colspan="5" style="text-align:center; padding:30px; color:#00ff88;">
+                        <i class="fa-solid fa-check-circle" style="font-size: 1.5rem; margin-bottom: 10px; display:block;"></i>
+                        <strong>System Clean</strong><br>
+                        <span style="font-size:0.85rem; color:#8b949e;">No active threats detected in memory dump.</span>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        // 2. Render Threats
+        elements.threatBody.innerHTML = threats.map(t => {
             // Styling based on severity
-            let severityStyle = 'color: #d29922; font-weight: bold;'; // Medium (Orange)
-            let actionStyle = 'background: rgba(210, 153, 34, 0.1); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.3);';
+            let color = '#d29922'; // Default Orange (Medium)
+            let bgStyle = 'background: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.3);';
 
-            if (t.severity === 'CRITICAL' || t.severity === 'HIGH') {
-                severityStyle = 'color: #ff7b72; font-weight: bold;'; // Red
-                actionStyle = 'background: rgba(255, 123, 114, 0.1); color: #ff7b72; border: 1px solid rgba(255, 123, 114, 0.3);';
+            if (t.severity === 'CRITICAL') {
+                color = '#ff7b72'; // Red
+                bgStyle = 'background: rgba(255, 123, 114, 0.1); border: 1px solid rgba(255, 123, 114, 0.3);';
+            } else if (t.severity === 'HIGH') {
+                color = '#ff7b72'; 
+                bgStyle = 'background: rgba(255, 123, 114, 0.1); border: 1px solid rgba(255, 123, 114, 0.3);';
             }
 
             return `
                 <tr style="border-bottom: 1px solid #30363d;">
-                    <td style="font-weight: bold; color: #e6edf3; padding: 12px;">${t.process}</td>
+                    <td style="font-weight: bold; color: #e6edf3; padding: 12px;">
+                        <i class="fa-solid fa-bug" style="margin-right:8px; color:${color};"></i>
+                        ${t.process}
+                    </td>
                     <td style="font-family: monospace; color: #8b949e;">${t.pid}</td>
                     <td style="color: #c9d1d9;">${t.issue}</td>
-                    <td style="${severityStyle}">${t.severity}</td>
+                    <td style="color:${color}; font-weight:bold;">${t.severity}</td>
                     <td>
-                        <span style="${actionStyle} padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">
-                            ${t.action}
-                        </span>
+                        <button onclick="copyToClipboard('${t.pid}')" title="Copy Kill Command" 
+                                style="${bgStyle} color:${color}; padding: 6px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                            <i class="fa-solid fa-skull"></i> ${t.action}
+                        </button>
                     </td>
                 </tr>
             `;
@@ -123,13 +144,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function getVerdict(score) {
         if (score > 75) return "CRITICAL THREAT";
         if (score > 30) return "SUSPICIOUS";
-        return "CLEAN";
+        return "CLEAN SYSTEM";
     }
 
     function updateScoreUI(score, verdict) {
-        const scoreText = document.getElementById('score-text');
-        const verdictLabel = document.getElementById('verdict-text');
-
+        const { scoreText, verdictText } = elements;
         let color = '#8b949e'; // Default Grey
 
         if (score > 70) color = '#ff7b72'; // Red
@@ -141,9 +160,29 @@ document.addEventListener('DOMContentLoaded', () => {
             scoreText.style.color = color;
         }
         
-        if(verdictLabel) {
-            verdictLabel.textContent = verdict;
-            verdictLabel.style.color = color;
+        if(verdictText) {
+            verdictText.textContent = verdict;
+            verdictText.style.color = color;
+            verdictText.style.borderColor = color; // Optional border styling
         }
     }
+
+    // --- HELPER: COPY TO CLIPBOARD ---
+    // Exposed to window so the HTML onclick="" can find it
+    window.copyToClipboard = (pid) => {
+        if (!pid || pid === '?' || pid === 'N/A') {
+            alert("No valid Process ID to kill.");
+            return;
+        }
+        
+        // Command to kill process in Windows
+        const command = `taskkill /F /PID ${pid}`;
+        
+        navigator.clipboard.writeText(command).then(() => {
+            // Visual feedback could be a toast, here we use simple alert
+            alert(`[COPIED] Run this in CMD/PowerShell:\n\n${command}`);
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+        });
+    };
 });
