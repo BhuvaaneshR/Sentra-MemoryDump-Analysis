@@ -23,16 +23,15 @@ def get_db_connection():
 
 def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict):
     """
-    Executes Volatility 3 plugins in a secure, isolated thread.
-    Generates a GUARANTEED JSON block for the ATS Table with Context-Aware Scoring.
+    Executes Volatility 3 plugins with Stateful Parsing and Context-Aware Scoring.
     """
-    print(f"⚙️ [Case #{case_id}] Starting Context-Aware Analysis...")
+    print(f"⚙️ [Case #{case_id}] Starting Robust Context-Aware Analysis...")
     
     conn = get_db_connection()
     if not conn: return
     cur = conn.cursor()
 
-    # --- STATE TRACKING (For Correlation Logic) ---
+    # --- STATE TRACKING ---
     process_map = {}      # PID -> Process Name
     parent_map = {}       # PID -> Parent PID (PPID)
     network_counts = {}   # PID -> Number of Connections
@@ -94,14 +93,13 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
 
             local_full_log += f"\n\n=== {plugin['desc']} ===\n{stdout}"
 
-            # --- ROBUST PARSING LOGIC (FIXED) ---
+            # --- ROBUST STATEFUL PARSING LOGIC ---
 
-            # A. Build Process Map (Using Split instead of Regex)
-            # Vol3 pslist columns: PID, PPID, ImageFileName, ...
+            # A. PsList (Process Map - Robust Split)
             if plugin['name'] == 'windows.pslist':
                 for line in stdout.splitlines():
                     parts = line.split()
-                    # We need at least PID, PPID, Name (3 items)
+                    # Expecting at least: PID, PPID, ImageFileName
                     if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
                         pid = parts[0]
                         ppid = parts[1]
@@ -109,10 +107,9 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                         process_map[pid] = name
                         parent_map[pid] = ppid
 
-            # B. Build Parent Map (Reinforcement)
+            # B. PsTree (Parent Map Backup)
             if plugin['name'] == 'windows.pstree':
                 for line in stdout.splitlines():
-                    # Remove tree characters for cleaner parsing if needed, but split usually handles it
                     parts = line.split()
                     if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
                         pid = parts[0]
@@ -121,32 +118,29 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                         process_map[pid] = name
                         parent_map[pid] = ppid
 
-            # C. Count Network Connections (Anchor Logic)
+            # C. Netscan (Network Map - Anchor Logic)
             if plugin['name'] == 'windows.netscan':
-                # Vol3 netscan is tricky. We look for "LISTENING" or "ESTABLISHED" and grab the NEXT integer.
                 for line in stdout.splitlines():
                     if "ESTABLISHED" in line or "LISTENING" in line:
                         parts = line.split()
                         try:
-                            # Find the index of the state
-                            if "ESTABLISHED" in parts:
-                                state_idx = parts.index("ESTABLISHED")
-                            else:
-                                state_idx = parts.index("LISTENING")
+                            # Heuristic: Find state, PID is usually the next integer
+                            state_idx = -1
+                            if "ESTABLISHED" in parts: state_idx = parts.index("ESTABLISHED")
+                            elif "LISTENING" in parts: state_idx = parts.index("LISTENING")
                             
-                            # PID is typically the item RIGHT AFTER the state
-                            if len(parts) > state_idx + 1:
+                            if state_idx != -1 and len(parts) > state_idx + 1:
                                 pid = parts[state_idx + 1]
                                 if pid.isdigit():
                                     network_counts[pid] = network_counts.get(pid, 0) + 1
-                        except ValueError:
-                            continue
+                        except: pass
 
-                        # Check Bad Ports
+                        # Bad Port Check
                         bad_ports = ['4444', '8808', '31337', '1337', '6667', '8080']
                         for port in bad_ports:
                             if f":{port}" in line:
                                 raw_risk_score += 30
+                                # Use pid from above if found, else ?
                                 found_pid = pid if 'pid' in locals() and pid.isdigit() else "?"
                                 local_findings.append({
                                     "process": "Network Socket", "pid": found_pid, 
@@ -155,32 +149,40 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                                 })
                                 local_text_summary.append(f"HIGH: C2 Port {port} active")
 
-            # D. Malfind (Critical Injection)
+            # D. Malfind (STATEFUL PARSING - CRITICAL FIX)
+            # Volatility 3 outputs Malfind data across multiple lines per process
             if plugin['name'] == 'windows.malfind':
+                current_pid = "?"
+                current_proc = "Unknown"
+                
                 for line in stdout.splitlines():
+                    # 1. Detect Header Line: "PID: 1234  Process: malware.exe"
+                    # Regex handles standard Vol3 output or tabular variations
+                    header_match = re.search(r'Pid:\s*(\d+)', line)
+                    if not header_match: 
+                        header_match = re.search(r'^\s*(\d+)\s+([a-zA-Z0-9_\-\.]+\.exe)', line)
+                    
+                    if header_match:
+                        current_pid = header_match.group(1)
+                        # Attempt to grab name if present in this line
+                        if len(header_match.groups()) > 1:
+                            current_proc = header_match.group(2)
+                        elif current_pid in process_map:
+                            current_proc = process_map[current_pid]
+
+                    # 2. Detect Finding Line: "Protection: PAGE_EXECUTE_READWRITE"
                     if "PAGE_EXECUTE_READWRITE" in line:
                         raw_risk_score += 50
-                        # Regex to capture PID (Start of line or after 'Pid:')
-                        pid_match = re.search(r'Pid:\s*(\d+)', line)
-                        if not pid_match: pid_match = re.search(r'^\s*(\d+)', line)
-                        
-                        pid = pid_match.group(1) if pid_match else "?"
-                        
-                        # Try to find Name (ends in .exe)
-                        name_match = re.search(r'\s([a-zA-Z0-9_\-\.]+\.exe)', line)
-                        proc = name_match.group(1) if name_match else "Unknown"
-                        
                         local_findings.append({
-                            "process": proc, "pid": pid, 
+                            "process": current_proc, "pid": current_pid, 
                             "issue": "Memory Injection (RWX Found)", 
                             "severity": "CRITICAL", "action": "KILL PROCESS"
                         })
-                        local_text_summary.append(f"CRITICAL: Injection in {proc} ({pid})")
+                        local_text_summary.append(f"CRITICAL: Injection in {current_proc} ({current_pid})")
 
             # E. LdrModules (Rootkits)
             if plugin['name'] == 'windows.ldrmodules':
                 for line in stdout.splitlines():
-                    # False False True pattern
                     if "False" in line and "True" in line:
                         parts = line.split()
                         if len(parts) > 2 and parts[0].isdigit():
@@ -191,13 +193,10 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                                 "severity": "HIGH", "action": "DEEP SCAN"
                             })
                             local_text_summary.append(f"WARN: Rootkit behavior in {parts[1]}")
-                            # Limit findings to avoid spamming table
-                            if len([x for x in local_findings if x['issue'] == "Hidden Module (Unlinked from PEB)"]) > 5:
-                                break
+                            if len([x for x in local_findings if x['issue'] == "Hidden Module (Unlinked from PEB)"]) > 5: break
 
-        # --- PHASE 2: ADVANCED CONTEXTUAL ANALYSIS (Logic Update) ---
+        # --- PHASE 2: ADVANCED CONTEXTUAL ANALYSIS ---
         
-        # DEBUG PRINTS (Check your terminal!)
         print(f"DEBUG: Process Map Size: {len(process_map)}")
         print(f"DEBUG: Network Map Size: {len(network_counts)}")
 
@@ -240,7 +239,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                 raw_risk_score += 30
                 local_findings.append({
                     "process": proc_name, "pid": pid, 
-                    "issue": f"High Freq Network Activity ({count} conns)",
+                    "issue": f"High Freq Network ({count} conns)",
                     "severity": "HIGH", "action": "CHECK TRAFFIC"
                 })
                 local_text_summary.append(f"HIGH: {proc_name} has {count} connections")
@@ -252,7 +251,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
             if pid in network_counts and network_counts[pid] > 0:
                 raw_risk_score += 20
                 if "NETWORK ACTIVE" not in finding['issue']:
-                    finding['issue'] += " + [NETWORK ACTIVE]" # This tag should now appear
+                    finding['issue'] += " + [NETWORK ACTIVE]"
                     finding['severity'] = "CRITICAL"
                     local_text_summary.append(f"ESCALATION: {finding['process']} is network active! Score boosted.")
 
@@ -286,7 +285,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
         else:
             summary += "No behavioral anomalies detected."
 
-        # FINAL OUTPUT
+        # FINAL OUTPUT FORMAT
         final_report = f"<<<JSON_START>>>{ats_json}<<<JSON_END>>>\n\n" + \
                        f"=== EXECUTIVE SUMMARY ===\n{summary}\n\n" + \
                        f"{local_full_log}"
