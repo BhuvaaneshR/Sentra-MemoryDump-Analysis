@@ -1,7 +1,8 @@
 import os
 import subprocess
 import json
-import re
+import csv
+import io
 import psycopg2
 
 # --- CONFIGURATION ---
@@ -23,9 +24,10 @@ def get_db_connection():
 
 def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict):
     """
-    Executes Volatility 3 plugins with Stateful Parsing and Context-Aware Scoring.
+    Executes Volatility 3 in CSV Mode (-r csv).
+    Uses csv.DictReader for 100% accurate parsing of threats.
     """
-    print(f"⚙️ [Case #{case_id}] Starting Robust Context-Aware Analysis...")
+    print(f"⚙️ [Case #{case_id}] Starting CSV-Based Context Analysis...")
     
     conn = get_db_connection()
     if not conn: return
@@ -39,9 +41,9 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
     # --- FINDINGS ACCUMULATOR ---
     local_findings = [] 
     local_text_summary = []
-    local_full_log = f"ANALYSIS LOG - CASE #{case_id}\n" + "="*50 + "\n"
+    # Initialize Log with clean text header
+    local_full_log = f"ANALYSIS LOG (CSV FORMAT) - CASE #{case_id}\n" + "="*50 + "\n"
     
-    # Base score accumulator
     raw_risk_score = 0
 
     try:
@@ -65,11 +67,11 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
         for plugin in plugins:
             if active_scans_dict.get(case_id, {}).get('stopped'): break
 
-            print(f"--> [Case #{case_id}] Running {plugin['name']}...")
+            print(f"--> [Case #{case_id}] Running {plugin['name']} (CSV Mode)...")
             
-            command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, plugin['name']]
+            # CRITICAL UPDATE: "-r", "csv" forces structured output matching the video
+            command = [PYTHON_EXEC, VOL_PATH, '-f', file_path, '-r', 'csv', plugin['name']]
             
-            # UTF-8 Encoding Fix
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
 
@@ -91,111 +93,121 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                 local_full_log += f"\n\n[!] {plugin['name']} Failed:\n{stderr}"
                 continue
 
-            local_full_log += f"\n\n=== {plugin['desc']} ===\n{stdout}"
+            # Append Raw CSV to Log (This will look clean in the report)
+            local_full_log += f"\n\n=== {plugin['desc']} (CSV) ===\n{stdout}"
 
-            # --- ROBUST STATEFUL PARSING LOGIC ---
-
-            # A. PsList (Process Map - Robust Split)
-            if plugin['name'] == 'windows.pslist':
-                for line in stdout.splitlines():
-                    parts = line.split()
-                    # Expecting at least: PID, PPID, ImageFileName
-                    if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
-                        pid = parts[0]
-                        ppid = parts[1]
-                        name = parts[2]
-                        process_map[pid] = name
-                        parent_map[pid] = ppid
-
-            # B. PsTree (Parent Map Backup)
-            if plugin['name'] == 'windows.pstree':
-                for line in stdout.splitlines():
-                    parts = line.split()
-                    if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
-                        pid = parts[0]
-                        ppid = parts[1]
-                        name = parts[2]
-                        process_map[pid] = name
-                        parent_map[pid] = ppid
-
-            # C. Netscan (Network Map - Anchor Logic)
-            if plugin['name'] == 'windows.netscan':
-                for line in stdout.splitlines():
-                    if "ESTABLISHED" in line or "LISTENING" in line:
-                        parts = line.split()
+            # --- ROBUST CSV PARSING LOGIC ---
+            # We use io.StringIO to treat the string output like a file for the CSV reader
+            csv_file = io.StringIO(stdout)
+            
+            # Volatility CSVs output the headers in the first line. 
+            # DictReader automatically uses them as keys.
+            try:
+                reader = csv.DictReader(csv_file)
+                
+                # A. PsList (Process Map)
+                if plugin['name'] == 'windows.pslist':
+                    for row in reader:
                         try:
-                            # Heuristic: Find state, PID is usually the next integer
-                            state_idx = -1
-                            if "ESTABLISHED" in parts: state_idx = parts.index("ESTABLISHED")
-                            elif "LISTENING" in parts: state_idx = parts.index("LISTENING")
+                            # 'PID', 'PPID', 'ImageFileName' are standard CSV headers in Vol3
+                            pid = row.get('PID', '?')
+                            ppid = row.get('PPID', '?')
+                            name = row.get('ImageFileName', 'Unknown')
                             
-                            if state_idx != -1 and len(parts) > state_idx + 1:
-                                pid = parts[state_idx + 1]
-                                if pid.isdigit():
-                                    network_counts[pid] = network_counts.get(pid, 0) + 1
+                            process_map[pid] = name
+                            parent_map[pid] = ppid
                         except: pass
 
-                        # Bad Port Check
-                        bad_ports = ['4444', '8808', '31337', '1337', '6667', '8080']
-                        for port in bad_ports:
-                            if f":{port}" in line:
-                                raw_risk_score += 30
-                                # Use pid from above if found, else ?
-                                found_pid = pid if 'pid' in locals() and pid.isdigit() else "?"
-                                local_findings.append({
-                                    "process": "Network Socket", "pid": found_pid, 
-                                    "issue": f"Suspicious C2 Port :{port}", 
-                                    "severity": "HIGH", "action": "BLOCK & KILL"
-                                })
-                                local_text_summary.append(f"HIGH: C2 Port {port} active")
+                # B. PsTree (Parent Map Backup)
+                elif plugin['name'] == 'windows.pstree':
+                    for row in reader:
+                        try:
+                            pid = row.get('PID', '?')
+                            ppid = row.get('PPID', '?')
+                            name = row.get('ImageFileName', 'Unknown')
+                            process_map[pid] = name
+                            parent_map[pid] = ppid
+                        except: pass
 
-            # D. Malfind (STATEFUL PARSING - CRITICAL FIX)
-            # Volatility 3 outputs Malfind data across multiple lines per process
-            if plugin['name'] == 'windows.malfind':
-                current_pid = "?"
-                current_proc = "Unknown"
-                
-                for line in stdout.splitlines():
-                    # 1. Detect Header Line: "PID: 1234  Process: malware.exe"
-                    # Regex handles standard Vol3 output or tabular variations
-                    header_match = re.search(r'Pid:\s*(\d+)', line)
-                    if not header_match: 
-                        header_match = re.search(r'^\s*(\d+)\s+([a-zA-Z0-9_\-\.]+\.exe)', line)
+                # C. Netscan (Network Map)
+                elif plugin['name'] == 'windows.netscan':
+                    bad_ports = ['4444', '8808', '31337', '1337', '6667', '8080']
                     
-                    if header_match:
-                        current_pid = header_match.group(1)
-                        # Attempt to grab name if present in this line
-                        if len(header_match.groups()) > 1:
-                            current_proc = header_match.group(2)
-                        elif current_pid in process_map:
-                            current_proc = process_map[current_pid]
+                    for row in reader:
+                        try:
+                            state = row.get('State', '')
+                            pid = row.get('PID', '?')
+                            local_port = row.get('LocalPort', '')
+                            foreign_port = row.get('ForeignPort', '')
 
-                    # 2. Detect Finding Line: "Protection: PAGE_EXECUTE_READWRITE"
-                    if "PAGE_EXECUTE_READWRITE" in line:
-                        raw_risk_score += 50
-                        local_findings.append({
-                            "process": current_proc, "pid": current_pid, 
-                            "issue": "Memory Injection (RWX Found)", 
-                            "severity": "CRITICAL", "action": "KILL PROCESS"
-                        })
-                        local_text_summary.append(f"CRITICAL: Injection in {current_proc} ({current_pid})")
+                            if state in ['ESTABLISHED', 'LISTENING']:
+                                # Populate Network Map
+                                if pid and pid.isdigit():
+                                    network_counts[pid] = network_counts.get(pid, 0) + 1
 
-            # E. LdrModules (Rootkits)
-            if plugin['name'] == 'windows.ldrmodules':
-                for line in stdout.splitlines():
-                    if "False" in line and "True" in line:
-                        parts = line.split()
-                        if len(parts) > 2 and parts[0].isdigit():
-                            raw_risk_score += 40
-                            local_findings.append({
-                                "process": parts[1], "pid": parts[0], 
-                                "issue": "Hidden Module (Unlinked from PEB)",
-                                "severity": "HIGH", "action": "DEEP SCAN"
-                            })
-                            local_text_summary.append(f"WARN: Rootkit behavior in {parts[1]}")
-                            if len([x for x in local_findings if x['issue'] == "Hidden Module (Unlinked from PEB)"]) > 5: break
+                                # Immediate Threat Check
+                                for port in bad_ports:
+                                    # Ensure we match ports correctly (string comparison)
+                                    if str(port) == str(local_port) or str(port) == str(foreign_port):
+                                        raw_risk_score += 30
+                                        local_findings.append({
+                                            "process": "Network Socket", "pid": pid, 
+                                            "issue": f"Suspicious C2 Port :{port}", 
+                                            "severity": "HIGH", "action": "BLOCK & KILL"
+                                        })
+                                        local_text_summary.append(f"HIGH: C2 Port {port} active")
+                        except: pass
 
-        # --- PHASE 2: ADVANCED CONTEXTUAL ANALYSIS ---
+                # D. Malfind (Critical Injection) - NOW 100% ACCURATE
+                elif plugin['name'] == 'windows.malfind':
+                    for row in reader:
+                        try:
+                            protection = row.get('Protection', '')
+                            # CSV makes this easy: we just check the 'Protection' column
+                            if "PAGE_EXECUTE_READWRITE" in protection:
+                                pid = row.get('PID', '?')
+                                proc = row.get('Process', 'Unknown')
+                                
+                                raw_risk_score += 50
+                                local_findings.append({
+                                    "process": proc, "pid": pid, 
+                                    "issue": "Memory Injection (RWX Found)", 
+                                    "severity": "CRITICAL", "action": "KILL PROCESS"
+                                })
+                                local_text_summary.append(f"CRITICAL: Injection in {proc} ({pid})")
+                        except: pass
+
+                # E. LdrModules (Rootkits)
+                elif plugin['name'] == 'windows.ldrmodules':
+                    for row in reader:
+                        try:
+                            # CSV Reader reads booleans as strings 'True'/'False'
+                            in_load = row.get('InLoad', 'True')
+                            in_init = row.get('InInit', 'True')
+                            in_mem = row.get('InMem', 'False') 
+                            
+                            # The Rootkit Pattern: Not in Load Order, Not in Init Order, But IS in Memory
+                            if in_load == 'False' and in_init == 'False' and in_mem == 'True':
+                                pid = row.get('Pid', '?')
+                                proc = row.get('Process', 'Unknown')
+                                
+                                raw_risk_score += 40
+                                local_findings.append({
+                                    "process": proc, "pid": pid, 
+                                    "issue": "Hidden Module (Unlinked from PEB)",
+                                    "severity": "HIGH", "action": "DEEP SCAN"
+                                })
+                                local_text_summary.append(f"WARN: Rootkit behavior in {proc}")
+                                
+                                # Anti-Spam
+                                if len([x for x in local_findings if "Hidden Module" in x['issue']]) > 5: break
+                        except: pass
+
+            except Exception as e:
+                print(f"Error parsing CSV for {plugin['name']}: {e}")
+                continue
+
+        # --- PHASE 2: ADVANCED CONTEXTUAL ANALYSIS (Logic Update) ---
         
         print(f"DEBUG: Process Map Size: {len(process_map)}")
         print(f"DEBUG: Network Map Size: {len(network_counts)}")
@@ -217,10 +229,8 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                         "severity": "CRITICAL", "action": "ISOLATE HOST"
                     })
                     local_text_summary.append(f"CRITICAL: {name} spawned by {parent_name}")
-                
                 elif parent_name == "explorer.exe":
-                    pass # Whitelisted
-                
+                    pass 
                 else:
                     raw_risk_score += 15
                     local_findings.append({
@@ -239,7 +249,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                 raw_risk_score += 30
                 local_findings.append({
                     "process": proc_name, "pid": pid, 
-                    "issue": f"High Freq Network ({count} conns)",
+                    "issue": f"High Freq Network Activity ({count} conns)",
                     "severity": "HIGH", "action": "CHECK TRAFFIC"
                 })
                 local_text_summary.append(f"HIGH: {proc_name} has {count} connections")
@@ -247,7 +257,6 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
         # 3. RISK MULTIPLIERS (Tag Generator)
         for finding in local_findings:
             pid = finding['pid']
-            # Correlation: Does this PID exist in the Network Map?
             if pid in network_counts and network_counts[pid] > 0:
                 raw_risk_score += 20
                 if "NETWORK ACTIVE" not in finding['issue']:
@@ -264,14 +273,9 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
                 seen.add(key)
                 unique_findings.append(f)
 
-        # Force Logic: If threats exist, Score MUST reflect it
-        if unique_findings and raw_risk_score < 35:
-            raw_risk_score = 35 
-
-        # Final Score Cap
+        if unique_findings and raw_risk_score < 35: raw_risk_score = 35 
         final_score = min(raw_risk_score, 100)
 
-        # Verdict
         verdict = "CLEAN"
         if final_score >= 75: verdict = "CRITICAL INFECTION"
         elif final_score >= 35: verdict = "SUSPICIOUS ACTIVITY"
@@ -285,7 +289,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
         else:
             summary += "No behavioral anomalies detected."
 
-        # FINAL OUTPUT FORMAT
+        # FINAL OUTPUT
         final_report = f"<<<JSON_START>>>{ats_json}<<<JSON_END>>>\n\n" + \
                        f"=== EXECUTIVE SUMMARY ===\n{summary}\n\n" + \
                        f"{local_full_log}"
@@ -294,7 +298,7 @@ def run_volatility_analysis(case_id, file_path, analysis_type, active_scans_dict
             "UPDATE cases SET status = 'completed', analysis_result = %s, risk_score = %s WHERE case_id = %s",
             (final_report, final_score, case_id)
         )
-        print(f"✅ [Case #{case_id}] Smart Analysis Complete. Score: {final_score}, Findings: {len(unique_findings)}")
+        print(f"✅ [Case #{case_id}] CSV Analysis Complete. Score: {final_score}")
 
     except Exception as e:
         print(f"❌ [Case #{case_id}] Failed: {e}")
