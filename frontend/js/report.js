@@ -29,8 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
         verdictText: document.getElementById('verdict-text'),
         threatSection: document.getElementById('threat-summary-section'),
         threatBody: document.getElementById('threat-table-body'),
-        printBtn: document.getElementById('print-report-btn')
+        printBtn: document.getElementById('print-report-btn'),
+        exportBtn: document.getElementById('export-btn') // The CSV Export Button
     };
+
+    // Store raw logs here for the export button to access
+    let rawReportContent = ""; 
 
     // 3. Load Data
     fetchReport();
@@ -48,6 +52,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 5. EXPORT CSV HANDLER (Video-Style Export)
+    if (elements.exportBtn) {
+        elements.exportBtn.addEventListener('click', () => {
+            if (!rawReportContent) {
+                alert("Analysis logs are not loaded yet.");
+                return;
+            }
+
+            // Create a Blob from the raw text (which is already CSV formatted by backend)
+            const blob = new Blob([rawReportContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            // Create temporary link to trigger download
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Sentra_Report_${caseId}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+
     // --- CORE LOGIC ---
 
     async function fetchReport() {
@@ -58,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.status === 'success') {
                 const data = response.data;
                 
+                // Store raw content for the Export button
+                rawReportContent = data.report_content || "No Data";
+
                 // A. Populate Header Info
                 if(elements.filename) elements.filename.textContent = data.file_name;
                 if(elements.date) elements.date.textContent = data.date; 
@@ -74,8 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const threats = data.threats || [];
                 renderThreatTable(threats);
 
-                // D. Populate Logs
-                if(elements.log) elements.log.textContent = data.report_content || "No analysis logs available.";
+                // D. Populate Logs (Visual)
+                if(elements.log) elements.log.textContent = rawReportContent;
 
             } else {
                 if(elements.log) elements.log.textContent = "Error: " + response.error;
@@ -163,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(verdictText) {
             verdictText.textContent = verdict;
             verdictText.style.color = color;
-            verdictText.style.borderColor = color; // Optional border styling
+            verdictText.style.borderColor = color; 
         }
     }
 
@@ -179,7 +210,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const command = `taskkill /F /PID ${pid}`;
         
         navigator.clipboard.writeText(command).then(() => {
-            // Visual feedback could be a toast, here we use simple alert
             alert(`[COPIED] Run this in CMD/PowerShell:\n\n${command}`);
         }).catch(err => {
             console.error('Failed to copy: ', err);
