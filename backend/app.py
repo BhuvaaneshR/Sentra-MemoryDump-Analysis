@@ -14,9 +14,12 @@ from email.message import EmailMessage
 import random
 import time
 import uuid
+from dotenv import load_dotenv  # NEW: Load env variables
+
+# --- 0. LOAD ENVIRONMENT VARIABLES ---
+load_dotenv() # This loads the variables from .env
 
 # --- IMPORT THE MODULAR RUNNER ---
-# This pulls the logic from backend/analysis/volatility_runner.py
 from analysis.volatility_runner import run_volatility_analysis
 
 app = Flask(__name__)
@@ -29,16 +32,17 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return response
 
-# --- 2. CONFIGURATION ---
-DB_HOST = "localhost"
-DB_NAME = "sentra_db"
-DB_USER = "postgres"
-DB_PASS = "admin" 
+# --- 2. CONFIGURATION (SECURE) ---
+# We now fetch these from the environment, with fallbacks for safety
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "sentra_db")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASS = os.getenv("DB_PASS", "admin") 
 
-SMTP_EMAIL = "sentramemorydump@gmail.com"
-SMTP_PASSWORD = "pjcn avud bbup yvaz" 
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-GOOGLE_CLIENT_ID = "199455383424-iai5kpl9402j9btrgl70uj0rer5f8quu.apps.googleusercontent.com" 
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 UPLOAD_FOLDER = 'static/uploads'
 DUMP_FOLDER = 'static/memory_dumps'
@@ -54,9 +58,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DUMP_FOLDER, exist_ok=True)
 
 otp_storage = {}
-
-# Global dictionary to track running scans for stopping
-# We pass this dictionary to the runner so it knows when to stop
 active_scans = {}
 
 # --- 3. HELPER FUNCTIONS ---
@@ -70,6 +71,10 @@ def get_db_connection():
 
 def send_email_otp(to_email, otp, user_name="User", action="Verification"):
     try:
+        if not SMTP_EMAIL or not SMTP_PASSWORD:
+            print("❌ Email Config Missing in .env")
+            return False
+            
         msg = EmailMessage()
         content = f"""Dear {user_name},
 
@@ -279,7 +284,6 @@ def upload_dump():
             conn.close()
 
             # --- THREADED ANALYSIS EXECUTION ---
-            # We now pass 'active_scans' so the modular runner can register the process
             thread = threading.Thread(
                 target=run_volatility_analysis, 
                 args=(case_id, save_path, analysis_type, active_scans)
@@ -296,14 +300,11 @@ def stop_analysis(case_id):
     if request.method == 'OPTIONS': return jsonify({}), 200
     print(f"🛑 Stop Request received for Case #{case_id}")
     if case_id in active_scans:
-        # Flag the scan as stopped
         active_scans[case_id]['stopped'] = True
-        # Terminate the actual subprocess if it exists
         proc = active_scans[case_id]['process']
         if proc and proc.poll() is None:
             proc.terminate()
         
-        # Update DB
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("UPDATE cases SET status = 'cancelled', analysis_result = 'Analysis stopped by user.' WHERE case_id = %s", (case_id,))

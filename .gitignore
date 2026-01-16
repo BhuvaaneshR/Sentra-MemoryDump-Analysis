@@ -4,6 +4,7 @@ __pycache__/
 backend/static/memory_dumps/*
 
 backend/static/uploads/*
+backend/.env
 
 !backend/static/memory_dumps/.gitkeep
 !backend/static/uploads/.gitkeep
